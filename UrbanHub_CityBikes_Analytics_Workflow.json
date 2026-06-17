@@ -1,0 +1,63 @@
+{
+  "name": "UrbanHub CityBikes Analytics",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "citybikes-report",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson"
+      },
+      "name": "CityBikes Report Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT json_build_object(\n  'top_usage', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots,0)), 4) AS usage_rate,\n             ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes,\n             ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots,\n             COUNT(*) AS samples\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      ORDER BY usage_rate DESC NULLS LAST\n      LIMIT 10\n    ) r\n  ),\n  'insufficient_zones', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             COUNT(*) FILTER (WHERE bikes_available = 0) AS zero_bike_count,\n             AVG(bikes_available) AS avg_bikes,\n             AVG(free_slots) AS avg_free_slots,\n             COUNT(*) AS samples\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5\n      ORDER BY zero_bike_count DESC\n      LIMIT 20\n    ) r\n  ),\n  'daily_peaks', (\n    SELECT json_agg(r) FROM (\n      SELECT date_trunc('day', event_timestamp) AS day,\n             date_trunc('hour', event_timestamp) AS hour,\n             SUM(bikes_available) AS total_bikes,\n             SUM(free_slots) AS total_free_slots,\n             ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots,0)), 4) AS avg_usage,\n             COUNT(*) AS samples\n      FROM citybikes_station_events\n      GROUP BY date_trunc('day', event_timestamp), date_trunc('hour', event_timestamp)\n      ORDER BY day, avg_usage DESC\n      LIMIT 24\n    ) r\n  ),\n  'geographic_imbalances', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes,\n             ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots,\n             ROUND(ABS(AVG(bikes_available - free_slots))::numeric, 2) AS imbalance_score\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      ORDER BY imbalance_score DESC\n      LIMIT 20\n    ) r\n  ),\n  'critical_stations', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             COUNT(*) FILTER (WHERE bikes_available = 0) AS no_bike_count,\n             COUNT(*) FILTER (WHERE free_slots = 0) AS no_slot_count,\n             COUNT(*) AS total_observations\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5 OR COUNT(*) FILTER (WHERE free_slots = 0) > 5\n      ORDER BY GREATEST(no_bike_count, no_slot_count) DESC\n      LIMIT 20\n    ) r\n  )\n) AS report;"
+      },
+      "name": "Postgres Analytics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "responseMode": "lastNode"
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "CityBikes Report Webhook": {
+      "main": [
+        [
+          {
+            "node": "Postgres Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Analytics": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "UrbanHubCityBikesAnalytics"
+}

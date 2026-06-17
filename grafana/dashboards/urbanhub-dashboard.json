@@ -1,0 +1,84 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "#000000",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "UrbanHub CityBikes analytics dashboard.",
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {"defaults": {},"overrides": []},
+      "gridPos": {"h": 8,"w": 12,"x": 0,"y": 0},
+      "id": 1,
+      "options": {"showHeader": true},
+      "pluginVersion": "10.0.0",
+      "targets": [{"format": "table","refId": "A","target": "SELECT station_id, station_name, network, ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)), 4) AS usage_rate, ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes, ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots, COUNT(*) AS samples FROM citybikes_station_events GROUP BY station_id, station_name, network ORDER BY usage_rate DESC NULLS LAST LIMIT 20"}],
+      "title": "Top 20 stations - taux d'utilisation",
+      "type": "table"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {"defaults": {},"overrides": []},
+      "gridPos": {"h": 8,"w": 12,"x": 12,"y": 0},
+      "id": 2,
+      "options": {"showHeader": true},
+      "pluginVersion": "10.0.0",
+      "targets": [{"format": "table","refId": "A","target": "SELECT station_id, station_name, network, latitude, longitude, COUNT(*) FILTER (WHERE bikes_available = 0) AS zero_bike_count, AVG(bikes_available) AS avg_bikes, AVG(free_slots) AS avg_free_slots, COUNT(*) AS samples FROM citybikes_station_events GROUP BY station_id, station_name, network, latitude, longitude HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5 ORDER BY zero_bike_count DESC LIMIT 20"}],
+      "title": "Stations avec offre insuffisante",
+      "type": "table"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {"defaults": {},"overrides": []},
+      "gridPos": {"h": 8,"w": 12,"x": 0,"y": 8},
+      "id": 3,
+      "options": {"legend": {"displayMode": "list"}},
+      "pluginVersion": "10.0.0",
+      "targets": [{"format": "time_series","refId": "A","target": "SELECT date_trunc('hour', event_timestamp) AS time, ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)), 4) AS avg_usage FROM citybikes_station_events GROUP BY date_trunc('hour', event_timestamp) ORDER BY time"}],
+      "title": "Pic d'utilisation horaire",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {"defaults": {},"overrides": []},
+      "gridPos": {"h": 8,"w": 12,"x": 12,"y": 8},
+      "id": 4,
+      "options": {"showHeader": true},
+      "pluginVersion": "10.0.0",
+      "targets": [{"format": "table","refId": "A","target": "SELECT station_id, station_name, network, latitude, longitude, ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes, ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots, ROUND(ABS(AVG(bikes_available - free_slots))::numeric, 2) AS imbalance_score FROM citybikes_station_events GROUP BY station_id, station_name, network, latitude, longitude ORDER BY imbalance_score DESC LIMIT 20"}],
+      "title": "Déséquilibres géographiques",
+      "type": "table"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {"defaults": {},"overrides": []},
+      "gridPos": {"h": 8,"w": 24,"x": 0,"y": 16},
+      "id": 5,
+      "options": {"showHeader": true},
+      "pluginVersion": "10.0.0",
+      "targets": [{"format": "table","refId": "A","target": "SELECT station_id, station_name, network, latitude, longitude, COUNT(*) FILTER (WHERE bikes_available = 0) AS no_bike_count, COUNT(*) FILTER (WHERE free_slots = 0) AS no_slot_count, COUNT(*) AS total_observations FROM citybikes_station_events GROUP BY station_id, station_name, network, latitude, longitude HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5 OR COUNT(*) FILTER (WHERE free_slots = 0) > 5 ORDER BY GREATEST(no_bike_count, no_slot_count) DESC LIMIT 20"}],
+      "title": "Stations critiques pour rééquilibrage",
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 42,
+  "style": "light",
+  "tags": ["UrbanHub", "CityBikes"],
+  "title": "UrbanHub CityBikes Analytics",
+  "uid": "urbanhub-citybikes-dashboard",
+  "version": 1
+}

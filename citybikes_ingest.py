@@ -30,10 +30,16 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 NETWORK_FILTER = ["FR"]
 
 
+def json_serializer(obj):
+    """Convert datetime objects to ISO format strings for JSON serialization."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
 def get_france_network_ids():
     response = requests.get(
         CITYBIKES_API,
-        params={"fields": "id,name,href"},
         timeout=20,
     )
     response.raise_for_status()
@@ -153,18 +159,21 @@ def send_to_postgres(conn, station_data):
 
 
 def send_to_kafka(producer, station_data):
-    payload = json.dumps(station_data).encode("utf-8")
+    payload = json.dumps(station_data, default=json_serializer).encode("utf-8")
     producer.send(TOPIC, payload)
 
 
 def publish_mqtt(station_data):
-    topic = f"urbanhub/citybikes/{station_data['network']}/{station_data['station_id']}"
-    publish.single(
-        topic,
-        payload=json.dumps(station_data),
-        hostname=MQTT_HOST,
-        port=MQTT_PORT,
-    )
+    try:
+        topic = f"urbanhub/citybikes/{station_data['network']}/{station_data['station_id']}"
+        publish.single(
+            topic,
+            payload=json.dumps(station_data, default=json_serializer),
+            hostname=MQTT_HOST,
+            port=MQTT_PORT,
+        )
+    except Exception as e:
+        logging.warning("MQTT publish failed (non-critical): %s", e)
 
 
 def build_station_record(network_name, station):

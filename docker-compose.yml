@@ -54,6 +54,23 @@ services:
     ports:
       - "1883:1883"
 
+  grafana:
+    image: grafana/grafana:10.0.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_PATHS_DATA: /var/lib/grafana/data
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - postgres
+
   n8n:
     image: n8nio/n8n:latest
     ports:
@@ -70,6 +87,7 @@ services:
       - kafka
       - minio
       - mqtt
+      - grafana
 
   ingester:
     build:
@@ -97,3 +115,4 @@ volumes:
   pgdata:
   minio_data:
   n8n_data:
+  grafana_data:

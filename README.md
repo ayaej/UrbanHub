@@ -48,9 +48,17 @@ docker compose up -d
 ## Utilisation dans n8n
 
 1. Créer un workflow n8n.
-2. Ajouter un noeud `MQTT Trigger` pour écouter `urbanhub/citybikes/#`.
-3. Ajouter un noeud `Webhook` si vous souhaitez exposer un endpoint public.
-4. Ajouter un noeud `Postgres` ou `HTTP Request` pour analyser les données ou alimenter des dashboards.
+2. Importer le fichier `UrbanHub_CityBikes_Analytics_Workflow.json`.
+3. Démarrer le workflow.
+4. Appeler le webhook : `http://localhost:5678/webhook/citybikes-report`.
+
+## Dashboard Grafana
+
+1. Ajouter Grafana au `docker-compose.yml`.
+2. Démarrer Grafana.
+3. Ouvrir `http://localhost:3000`.
+4. Login admin/admin.
+5. Le dashboard `UrbanHub CityBikes Analytics` se charge automatiquement.
 
 ## Questions métier couvertes
 

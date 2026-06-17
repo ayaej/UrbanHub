@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: urbanhub
+    database: urbanhub
+    basicAuth: false
+    isDefault: true
+    editable: true
