@@ -1,0 +1,15 @@
+base_url: "https://api.openaq.org/v2"
+country: "FR"
+cities:
+  - "Paris"
+  - "Lyon"
+  - "Marseille"
+pollutants:
+  - "pm25"
+  - "pm10"
+  - "no2"
+  - "o3"
+  - "co"
+page_size: 100
+minio_bucket: "urbanhub"
+bronze_prefix: "bronze/iot/pollution"
