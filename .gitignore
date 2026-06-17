@@ -1,0 +1,47 @@
+# Fichiers Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Environnements virtuels
+.env/
+.venv/
+venv/
+env/
+
+# Fichier d'environnement global du projet (contenant les clés)
+# (ATTENTION: ici je parle du .env racine. Si tu veux le versionner, enlève cette ligne.)
+#.env
+
+# Logs
+*.log
+logs/
+log/
+
+# Données générées par ton projet
+iot_pollution/data/
+iot_pollution/__pycache__/
+
+# Docker / n8n / services
+docker-data/
+data/
+tmp/
+.n8n/
+postgres-data/
+redis-data/
+mongo-data/
+
+# Fichiers Docker génériques
+*.pid
+*.sock
+
+# IDE / éditeurs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

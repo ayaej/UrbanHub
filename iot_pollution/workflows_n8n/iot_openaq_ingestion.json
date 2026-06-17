@@ -1,0 +1,92 @@
+{
+  "name": "IoT OpenAQ ingestion",
+  "nodes": [
+    {
+      "id": "Webhook_IoT_OpenAQ",
+      "name": "Webhook IoT OpenAQ",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "iot-openaq",
+        "responseMode": "onReceived",
+        "responseBody": "{\"status\":\"ok\"}",
+        "options": {
+          "responseContentType": "application/json"
+        }
+      }
+    },
+    {
+      "id": "Function_Validate",
+      "name": "Validate & Enrich",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300],
+      "parameters": {
+        "functionCode": "const item = items[0];\n\n// Vérification minimale\nconst required = [\"sensor_id\",\"timestamp\",\"pollutant\",\"value\",\"unit\",\"latitude\",\"longitude\"];\nfor (const k of required) {\n  if (item.json[k] === undefined || item.json[k] === null) {\n    throw new Error(`Champ manquant ou nul: ${k}`);\n  }\n}\n\n// Enrichissement simple\nitem.json.ingested_at = new Date().toISOString();\n\nreturn items;"
+      }
+    },
+    {
+      "id": "Function_ToFile",
+      "name": "Format JSONL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "parameters": {
+        "functionCode": "const item = items[0];\nconst line = JSON.stringify(item.json) + '\\n';\nreturn [{ json: { line } }];"
+      }
+    },
+    {
+      "id": "Write_File",
+      "name": "Append to Bronze File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1200, 300],
+      "parameters": {
+        "fileName": "/data/bronze_iot_openaq.log",
+        "options": {
+          "append": true
+        },
+        "dataPropertyName": "data"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook IoT OpenAQ": {
+      "main": [
+        [
+          {
+            "node": "Validate & Enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Enrich": {
+      "main": [
+        [
+          {
+            "node": "Format JSONL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format JSONL": {
+      "main": [
+        [
+          {
+            "node": "Append to Bronze File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "versionId": "iot-openaq-ingestion-v1"
+}

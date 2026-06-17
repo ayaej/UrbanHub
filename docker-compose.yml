@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  postgres_n8n:
+    image: postgres:15
+    container_name: postgres_n8n
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: n8n
+    volumes:
+      - ./data/postgres_n8n:/var/lib/postgresql/data
+    networks:
+      - urbanhub_net
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"          # UI n8n
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin
+      # Base de données n8n (PostgreSQL)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres_n8n
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n
+      # Config serveur
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      # Optionnel : autoriser certains modules dans les Function nodes
+      - NODE_FUNCTION_ALLOW_EXTERNAL=requests,axios
+    depends_on:
+      - postgres_n8n
+    volumes:
+      - ./data/n8n:/home/node/.n8n        # config n8n
+      - ./data/bronze_iot:/data          # fichiers Bronze IoT écrits par le workflow
+    networks:
+      - urbanhub_net
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # console Web MinIO
+    volumes:
+      - ./data/minio:/data
+    networks:
+      - urbanhub_net
+
+networks:
+  urbanhub_net:
+    driver: bridge
