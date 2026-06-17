@@ -179,8 +179,3 @@ Ce modèle de données IoT sera utilisé à plusieurs niveaux :
 1. Créer le fichier `iot_pollution/docs/iot_pollution_schema.md` avec ce contenu.  
 2. Créer un fichier `data_samples/raw_openaq_sample.json` en copiant une vraie réponse d’OpenAQ et en la transformant selon ce schéma.  
 3. Dans `scripts/simulate_iot_stream.py`, générer des messages au format défini ci‑dessus et les envoyer à ton webhook n8n.
-
-Si tu veux, je peux t’écrire maintenant un **exemple de code Python** qui :  
-- appelle l’API OpenAQ pour la France,  
-- applique ce mappage,  
-- construit un message JSON au format de ton modèle.
