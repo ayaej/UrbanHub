@@ -85,7 +85,7 @@ def download_file(url: str, destination: Path, station_id: str, year: int) -> Tu
         return True, f"Downloaded: {destination.name}"
         
     except Exception as e:
-        logger.error(f"✗ Erreur download {url}: {e}")
+        logger.error(f"[FAILED] Download {url}: {e}")
         if destination.exists():
             destination.unlink()  # Supprime le fichier partiel
         return False, f"Failed: {url} - {str(e)}"

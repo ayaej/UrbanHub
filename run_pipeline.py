@@ -41,7 +41,7 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
     start_time = time.time()
     
     logger.info("=" * 80)
-    logger.info(" " * 20 + "🚀 URBANHUB FULL TECHNOLOGY STACK")
+    logger.info(" " * 20 + "[URBANHUB] FULL TECHNOLOGY STACK")
     logger.info("=" * 80)
     logger.info(f"Début: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"Configuration:")
@@ -63,7 +63,7 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
                 bucket=os.getenv('MINIO_BUCKET', 'urbanhub'),
                 secure=os.getenv('MINIO_SECURE', 'false').lower() == 'true',
             )
-            logger.info("✓ MinIO initialized")
+            logger.info("[OK] MinIO initialized")
         except Exception as e:
             logger.warning(f"MinIO initialization failed: {e}")
             use_minio = False
@@ -72,30 +72,30 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
         # Étape 1: Setup
         logger.info("\n[1/7] Setup Data Lake...")
         setup_datalake()
-        logger.info("✓ Setup terminé")
+        logger.info("[OK] Setup termine")
         
         # Étape 2: Download (optionnel)
         if not skip_download:
             logger.info("\n[2/7] Téléchargement NOAA...")
             download_all_data(workers=workers)
-            logger.info("✓ Téléchargement terminé")
+            logger.info("[OK] Telechargement termine")
         else:
-            logger.info("\n[2/7] ⏭️  Téléchargement skippé")
+            logger.info("\n[2/7] [SKIP] Telechargement skippe")
         
         # Étape 3: Silver Processing (Pandas + PyArrow)
         logger.info("\n[3/7] Processing → Silver (Pandas + PyArrow)...")
         process_bronze_to_silver()
-        logger.info("✓ Silver processing terminé (Parquet Snappy)")
+        logger.info("[OK] Silver processing termine (Parquet Snappy)")
         
         # Étape 4: Gold Aggregation
         logger.info("\n[4/7] Agrégation → Gold (indicateurs)...")
         generate_gold()
-        logger.info("✓ Gold aggregation terminée")
+        logger.info("[OK] Gold aggregation terminee")
         
         # Étape 5: Visualizations
         logger.info("\n[5/7] Génération visualisations...")
         generate_visualizations()
-        logger.info("✓ Visualisations générées")
+        logger.info("[OK] Visualisations generees")
         
         # Étape 6: MinIO Sync
         if use_minio and storage:
@@ -105,11 +105,11 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
                     if file.is_file():
                         remote_path = f"gold/{file.relative_to(GOLD_DIR)}"
                         storage.minio.upload_parquet(str(file), remote_path)
-                logger.info("✓ MinIO sync terminé")
+                logger.info("[OK] MinIO sync termine")
             except Exception as e:
                 logger.warning(f"MinIO sync failed: {e}")
         else:
-            logger.info("\n[6/7] ⏭️  MinIO skippé")
+            logger.info("\n[6/7] [SKIP] MinIO skippe")
         
         # Étape 7: PostgreSQL Export
         if use_postgres:
@@ -123,11 +123,11 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
                     user=os.getenv('POSTGRES_USER', 'urbanhub_user'),
                     password=os.getenv('POSTGRES_PASSWORD', 'urbanhub_password'),
                 )
-                logger.info("✓ PostgreSQL export terminé")
+                logger.info("[OK] PostgreSQL export termine")
             except Exception as e:
                 logger.warning(f"PostgreSQL export failed: {e}")
         else:
-            logger.info("\n[7/7] ⏭️  PostgreSQL skippé")
+            logger.info("\n[7/7] [SKIP] PostgreSQL skippe")
         
         # Résumé final
         elapsed = time.time() - start_time
@@ -145,27 +145,27 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
             extreme_count = len(pd.read_parquet(gold_extreme))
         
         logger.info("\n" + "=" * 80)
-        logger.info("✅ FULL STACK PIPELINE SUCCESSFUL!")
+        logger.info("[OK] FULL STACK PIPELINE SUCCESSFUL!")
         logger.info("=" * 80)
         logger.info(f"Fin: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"Durée totale: {elapsed:.1f}s ({elapsed/60:.1f}min)")
-        logger.info(f"\n📊 STATISTICS:")
+        logger.info(f"\n[STATISTICS]:")
         logger.info(f"   Gold Daily Records: {daily_count:,}")
         logger.info(f"   Extreme Events: {extreme_count:,}")
         logger.info(f"   Output: data/lake/gold/weather/")
         logger.info("=" * 80)
-        logger.info(f"\n🔗 TECHNOLOGIES UTILISÉES:")
-        logger.info(f"   ✅ Python 3.8+ + Pandas + PyArrow (Parquet Snappy)")
-        logger.info(f"   {'✅' if use_minio else '⏭️'} MinIO (Bronze/Silver/Gold)")
-        logger.info(f"   ⏭️  n8n (cron) - Configure via docker-compose + workflows/")
-        logger.info(f"   ✅ Docker (Dockerfile + docker-compose.yml)")
-        logger.info(f"   {'✅' if use_postgres else '⏭️'} PostgreSQL (BI Analytics)")
+        logger.info(f"\n[TECHNOLOGIES USED]:")
+        logger.info(f"   [OK] Python 3.8+ + Pandas + PyArrow (Parquet Snappy)")
+        logger.info(f"   {'[OK]' if use_minio else '[SKIP]'} MinIO (Bronze/Silver/Gold)")
+        logger.info(f"   [SKIP] n8n (cron) - Configure via docker-compose + workflows/")
+        logger.info(f"   [OK] Docker (Dockerfile + docker-compose.yml)")
+        logger.info(f"   {'[OK]' if use_postgres else '[SKIP]'} PostgreSQL (BI Analytics)")
         logger.info("=" * 80)
         
         return True
         
     except Exception as e:
-        logger.error(f"\n❌ ERREUR PIPELINE: {e}", exc_info=True)
+        logger.error(f"\n[ERREUR PIPELINE] {e}", exc_info=True)
         logger.error(f"Durée avant erreur: {time.time() - start_time:.1f}s")
         return False
 

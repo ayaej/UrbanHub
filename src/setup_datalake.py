@@ -12,7 +12,7 @@ def setup_datalake():
     # Crée les répertoires principaux
     for dir_path in [BRONZE_DIR, SILVER_DIR, GOLD_DIR]:
         dir_path.mkdir(parents=True, exist_ok=True)
-        print(f"✓ Créé: {dir_path}")
+        print(f"[OK] Created: {dir_path}")
     
     # Crée un fichier de configuration
     config = {
@@ -33,9 +33,9 @@ def setup_datalake():
     with open(config_file, 'w') as f:
         json.dump(config, f, indent=2)
     
-    print(f"✓ Configuration: {config_file}")
+    print(f"[OK] Configuration: {config_file}")
     print("\n" + "="*60)
-    print("Data Lake setup complété!")
+    print("Data Lake setup completed!")
     print("="*60)
 
 if __name__ == "__main__":
