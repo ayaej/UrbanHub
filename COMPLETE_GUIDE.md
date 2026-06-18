@@ -118,7 +118,7 @@ python run_pipeline.py --use-minio --use-postgres
 ```bash
 # Interface web
 # http://localhost:9001
-# Login: minioadmin / minioadmin
+# Login: minioadmin / minioadmin123
 # Dossier: urbanhub/ → bronze/, silver/, gold/
 ```
 
