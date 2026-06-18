@@ -1,9 +1,9 @@
 # 📊 Documentation Data Lake - UrbanHub
 
 👉 **Besoin de démarrer?** Consultez:
-- [../INDEX.md](../INDEX.md) - Navigation complète
-- [../START.md](../START.md) - Démarrage rapide
-- [../QUICKSTART.md](../QUICKSTART.md) - Guide complet
+- [../README.md](../README.md) - Vue d'ensemble
+- [../COMPLETE_GUIDE.md](../COMPLETE_GUIDE.md) - Guide complet (3 options)
+- [../HOW_5_TECHNOLOGIES_WORK.md](../HOW_5_TECHNOLOGIES_WORK.md) - Comment les technologies fonctionnent
 
 ---
 

@@ -1,9 +1,9 @@
 # 🏗️ Architecture - UrbanHub Smart City Platform
 
 👉 **Nouveau ici?** Consultez:
-- [../INDEX.md](../INDEX.md) - Navigation complète
 - [../README.md](../README.md) - Vue d'ensemble
-- [../QUICKSTART.md](../QUICKSTART.md) - Guide complet
+- [../COMPLETE_GUIDE.md](../COMPLETE_GUIDE.md) - Guide complet (3 options)
+- [../HOW_5_TECHNOLOGIES_WORK.md](../HOW_5_TECHNOLOGIES_WORK.md) - Comment les technologies fonctionnent
 
 ---
 
