@@ -1,0 +1,115 @@
+{
+  "name": "UrbanHub Daily Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": "everyDay",
+        "hour": 2,
+        "minute": 0
+      },
+      "name": "Trigger: Daily at 2 AM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [100, 100]
+    },
+    {
+      "parameters": {
+        "command": "cd /app && python run_pipeline.py --skip-download=false",
+        "workingDirectory": "/app"
+      },
+      "name": "Execute Pipeline",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [300, 100],
+      "credentials": {
+        "local": "SSH_Credentials"
+      }
+    },
+    {
+      "parameters": {
+        "host": "{{ $env.POSTGRES_HOST }}",
+        "port": "{{ $env.POSTGRES_PORT }}",
+        "database": "{{ $env.POSTGRES_DB }}",
+        "user": "{{ $env.POSTGRES_USER }}",
+        "password": "{{ $env.POSTGRES_PASSWORD }}",
+        "operation": "executeQuery",
+        "query": "INSERT INTO pipeline_runs (run_date, status, records_processed) VALUES (NOW(), 'success', (SELECT COUNT(*) FROM weather_daily))"
+      },
+      "name": "Log to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [500, 100]
+    },
+    {
+      "parameters": {
+        "url": "{{ $env.MINIO_ENDPOINT }}/minio/health/live",
+        "method": "GET"
+      },
+      "name": "Verify MinIO",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [700, 100]
+    },
+    {
+      "parameters": {
+        "email": "admin@urbanhub.local",
+        "subject": "UrbanHub Pipeline - Daily Execution",
+        "text": "Pipeline executed successfully on {{ $now }}. Records processed: {{ $node['Log to PostgreSQL'].data.recordCount }}"
+      },
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [900, 100]
+    }
+  ],
+  "connections": {
+    "Trigger: Daily at 2 AM": {
+      "main": [
+        [
+          {
+            "node": "Execute Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Log to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Verify MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify MinIO": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

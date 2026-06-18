@@ -1,0 +1,151 @@
+{
+  "datalake": {
+    "name": "UrbanHub Weather Data Lake",
+    "version": "1.0",
+    "description": "Data Lake for NOAA weather data (France 2020-2025)",
+    "created": "2025-06-18"
+  },
+  "layers": {
+    "bronze": {
+      "description": "Raw NOAA files (CSV)",
+      "format": "CSV",
+      "partitioning": "year=YYYY/station=STATION_ID",
+      "retention": "permanent",
+      "size_estimated_mb": 200
+    },
+    "silver": {
+      "description": "Cleaned hourly weather data",
+      "format": "Parquet (Snappy compression)",
+      "partitioning": "year=YYYY/month=MM/city=CITY",
+      "retention": "long_term",
+      "size_estimated_mb": 150
+    },
+    "gold": {
+      "description": "Aggregated indicators and insights",
+      "format": "Parquet + CSV",
+      "partitioning": "flat (no partitioning)",
+      "retention": "permanent",
+      "size_estimated_mb": 10
+    }
+  },
+  "stations": {
+    "LFPG": "Paris CDG",
+    "LFPO": "Paris Orly",
+    "LFBD": "Bordeaux",
+    "LFML": "Marseille",
+    "LFGG": "Biarritz",
+    "LFLY": "Lyon",
+    "LFTH": "Toulouse",
+    "LFST": "Strasbourg",
+    "LFPN": "Nancy",
+    "LFRN": "Rennes",
+    "LFPT": "Pointe-à-Pitre",
+    "LFMN": "Nice",
+    "LFLW": "Lille",
+    "LFRJ": "Nantes"
+  },
+  "variables": {
+    "station_id": {
+      "type": "string",
+      "description": "Station identifier"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "ISO 8601 UTC",
+      "description": "Observation time"
+    },
+    "temperature": {
+      "type": "float",
+      "unit": "°C",
+      "description": "Air temperature"
+    },
+    "wind_speed": {
+      "type": "float",
+      "unit": "m/s",
+      "description": "Wind speed"
+    },
+    "wind_direction": {
+      "type": "float",
+      "unit": "degrees",
+      "range": "0-360",
+      "description": "Wind direction"
+    },
+    "pressure": {
+      "type": "float",
+      "unit": "hPa",
+      "description": "Sea level pressure"
+    },
+    "precipitation": {
+      "type": "float",
+      "unit": "mm",
+      "description": "Hourly precipitation"
+    },
+    "visibility": {
+      "type": "float",
+      "unit": "km",
+      "description": "Horizontal visibility"
+    }
+  },
+  "quality": {
+    "extreme_thresholds": {
+      "heat_wave": "temperature >= 30°C",
+      "cold_wave": "temperature <= 0°C",
+      "strong_wind": "wind_speed >= 10 m/s",
+      "heavy_rain": "precipitation >= 10 mm/day",
+      "low_visibility": "visibility <= 1 km"
+    },
+    "data_validation": {
+      "missing_data_strategy": "forward_fill + median_imputation",
+      "outlier_handling": "retain (documented in logs)",
+      "duplicate_check": "remove duplicate timestamps per station",
+      "range_checks": "temperature [-50, 50]°C, wind [0, 100] m/s"
+    }
+  },
+  "pipeline": {
+    "stages": [
+      {
+        "name": "Download",
+        "script": "downloader.py",
+        "input": "NOAA Web Index",
+        "output": "Bronze CSV files",
+        "time_estimate_seconds": 45
+      },
+      {
+        "name": "Silver Processing",
+        "script": "silver_processor.py",
+        "input": "Bronze CSV",
+        "output": "Silver Parquet (year/month/city)",
+        "time_estimate_seconds": 180
+      },
+      {
+        "name": "Gold Aggregation",
+        "script": "gold_aggregator.py",
+        "input": "Silver Parquet",
+        "output": "Gold tables (daily, extreme, correlations)",
+        "time_estimate_seconds": 60
+      },
+      {
+        "name": "Visualization",
+        "script": "visualizer.py",
+        "input": "Gold tables",
+        "output": "PNG charts",
+        "time_estimate_seconds": 30
+      }
+    ],
+    "total_time_estimate_seconds": 315,
+    "parallelization": {
+      "download": "ThreadPoolExecutor (4-8 workers)",
+      "silver": "Pandas groupby + I/O",
+      "gold": "Pandas groupby + aggregation"
+    }
+  },
+  "metadata": {
+    "expected_records_bronze": 600,
+    "expected_records_silver": 2500000,
+    "expected_records_gold_daily": 17850,
+    "expected_records_gold_extreme": 1200,
+    "time_period": "2020-01-01 to 2025-12-31",
+    "geographic_scope": "France (14 major airports/stations)",
+    "update_frequency": "monthly (batch mode)"
+  }
+}
