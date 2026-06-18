@@ -56,7 +56,7 @@ class LocalStorage(StorageBackend):
             dst.parent.mkdir(parents=True, exist_ok=True)
             
             if src.exists():
-                logger.debug(f"LocalStorage: {src} → {dst}")
+                logger.debug(f"LocalStorage: {src} - {dst}")
                 return True
             return False
         except Exception as e:
@@ -68,7 +68,7 @@ class LocalStorage(StorageBackend):
         try:
             src = self.base_path / remote_path
             if src.exists():
-                logger.debug(f"LocalStorage: {src} → {local_path}")
+                logger.debug(f"LocalStorage: {src} - {local_path}")
                 return True
             return False
         except Exception as e:

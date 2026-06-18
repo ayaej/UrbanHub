@@ -31,11 +31,7 @@ def plot_seasonal_temperature(daily_df: pd.DataFrame, output_dir: Path):
     
     output_file = output_dir / "seasonal_temperature.png"
     plt.savefig(output_file, dpi=150)
-    logger.info(f"✓ Graphique sauvegardé: {output_file}")
-    plt.close()
-
-def plot_extreme_events(extreme_df: pd.DataFrame, output_dir: Path):
-    """Distribution des événements extrêmes"""
+    logger.info(f"[OK] Graphique saved: {output_file}")
     plt.figure(figsize=(10, 6))
     
     event_counts = extreme_df['event_type'].value_counts()
@@ -47,10 +43,7 @@ def plot_extreme_events(extreme_df: pd.DataFrame, output_dir: Path):
     
     output_file = output_dir / "extreme_events_distribution.png"
     plt.savefig(output_file, dpi=150)
-    logger.info(f"✓ Graphique sauvegardé: {output_file}")
-    plt.close()
-
-def plot_precipitation_heatmap(daily_df: pd.DataFrame, output_dir: Path):
+    logger.info(f"[OK] Graphique saved: {output_file}")
     """Heatmap précipitations par ville"""
     plt.figure(figsize=(12, 6))
     
@@ -66,7 +59,7 @@ def plot_precipitation_heatmap(daily_df: pd.DataFrame, output_dir: Path):
     
     output_file = output_dir / "precipitation_heatmap.png"
     plt.savefig(output_file, dpi=150)
-    logger.info(f"✓ Graphique sauvegardé: {output_file}")
+    logger.info(f"[OK] Graphique saved: {output_file}")
     plt.close()
 
 def generate_visualizations():
@@ -95,7 +88,7 @@ def generate_visualizations():
         plot_extreme_events(extreme_df, output_dir)
         plot_precipitation_heatmap(daily_df, output_dir)
         
-        logger.info(f"\n✓ Visualisations sauvegardées dans {output_dir}")
+        logger.info(f"\n[OK] Visualisations saved in {output_dir}")
         
     except Exception as e:
         logger.error(f"Erreur génération visualisations: {e}")

@@ -96,7 +96,7 @@ class PipelineOrchestrator:
                 logger.info("\n[2/6] ⏭️  Skip download (Bronze déjà téléchargé)")
             
             # 3️⃣ SILVER
-            logger.info("\n[3/6] Transformation Silver (Bronze → Parquet)...")
+            logger.info("\n[3/6] Transformation Silver (Bronze - Parquet)...")
             if not self._run_silver():
                 logger.error("Silver processing failed!")
                 return False

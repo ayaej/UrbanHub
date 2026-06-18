@@ -149,33 +149,37 @@ def save_gold_tables(daily_df: pd.DataFrame, extreme_df: pd.DataFrame, correlati
     # 1. Table quotidienne
     daily_file = GOLD_DIR / "weather_daily.parquet"
     daily_df.to_parquet(daily_file, index=False, compression='snappy')
-    logger.info(f"✓ Table quotidienne: {daily_file} ({len(daily_df)} lignes)")
+    logger.info(f"[OK] Daily table: {daily_file} ({len(daily_df)} rows)")
     
-    # 2. Jours extrêmes
+    # 2. Extreme days
     extreme_file = GOLD_DIR / "weather_extreme_days.parquet"
     extreme_df.to_parquet(extreme_file, index=False, compression='snappy')
-    logger.info(f"✓ Jours extrêmes: {extreme_file} ({len(extreme_df)} événements)")
+    logger.info(f"[OK] Extreme days: {extreme_file} ({len(extreme_df)} events)")
     
-    # 3. Corrélations (CSV)
+    # 3. Correlations (CSV)
     corr_file = GOLD_DIR / "weather_correlations.csv"
     corr_df = pd.DataFrame(list(correlations.items()), columns=['pair', 'correlation'])
     corr_df.to_csv(corr_file, index=False)
-    logger.info(f"✓ Corrélations: {corr_file}")
+    logger.info(f"[OK] Correlations: {corr_file}")
     
-    # 4. Résumé par ville (statistiques annuelles)
+    # 4. Annual summary by city
     annual_summary = daily_df.groupby('city').agg({
         'temperature_mean': ['min', 'max', 'mean'],
         'precipitation_sum': 'sum',
         'wind_speed_max': 'mean',
     })
+    annual_summary.columns = ['_'.join(col).strip() for col in annual_summary.columns.values]
+    annual_summary = annual_summary.reset_index()
+    annual_summary['year'] = daily_df['datetime'].dt.year.max()  # Add year column
+    
     summary_file = GOLD_DIR / "city_summary_annual.csv"
-    annual_summary.to_csv(summary_file)
-    logger.info(f"✓ Résumé annuel: {summary_file}")
+    annual_summary.to_csv(summary_file, index=False)
+    logger.info(f"[OK] Annual summary: {summary_file}")
 
 def generate_gold():
     """Pipeline complet Silver → Gold"""
     logger.info("=" * 60)
-    logger.info("Agrégation Silver → Gold (indicateurs)")
+    logger.info("Agregation Silver - Gold (indicateurs)")
     logger.info("=" * 60)
     
     # Charge Silver

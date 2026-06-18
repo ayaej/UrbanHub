@@ -100,21 +100,37 @@ class PostgreSQLExporter:
             
             df = pd.read_parquet(parquet_path)
             
-            # Conversions types pour PostgreSQL
-            df['date'] = pd.to_datetime(df['date'])
-            df['temperature_mean'] = df['temperature_mean'].astype('float64')
-            df['temperature_min'] = df['temperature_min'].astype('float64')
-            df['temperature_max'] = df['temperature_max'].astype('float64')
-            df['wind_speed_mean'] = df['wind_speed_mean'].astype('float64')
-            df['precipitation_total'] = df['precipitation_total'].astype('float64')
-            df['visibility_mean'] = df['visibility_mean'].astype('float64')
-            df['pressure_mean'] = df['pressure_mean'].astype('float64')
+            # Rename columns to match database schema
+            df = df.rename(columns={
+                'temperature_min': 'temperature_min',
+                'temperature_max': 'temperature_max',
+                'temperature_mean': 'temperature_mean',
+                'wind_speed_mean': 'wind_speed_mean',
+                'wind_direction_mean': 'wind_direction_mean',
+                'pressure_mean': 'pressure_mean',
+                'precipitation_sum': 'precipitation_total',  # Rename to match database
+                'visibility_mean': 'visibility_mean',
+            })
             
-            # Crée table
+            # Remove columns that don't exist in database
+            allowed_cols = ['date', 'city', 'station_id', 'temperature_mean', 'temperature_min', 
+                           'temperature_max', 'wind_speed_mean', 'wind_direction_mean', 
+                           'pressure_mean', 'precipitation_total', 'visibility_mean']
+            df = df[[col for col in allowed_cols if col in df.columns]]
+            
+            # Type conversions for PostgreSQL
+            df['date'] = pd.to_datetime(df['date'])
+            for col in ['temperature_mean', 'temperature_min', 'temperature_max', 
+                       'wind_speed_mean', 'wind_direction_mean', 'pressure_mean', 
+                       'precipitation_total', 'visibility_mean']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Create table
             self.drop_table('weather_daily')
             self.export_dataframe(df, 'weather_daily', if_exists='replace')
             
-            # Index pour performance BI
+            # Index for BI performance
             self._create_indexes('weather_daily', ['date', 'city', 'station_id'])
             
             return True
@@ -173,8 +189,16 @@ class PostgreSQLExporter:
             
             df = pd.read_csv(csv_path)
             
-            # Conversions
-            df['year'] = df['year'].astype('int32')
+            # Ensure all required columns exist
+            if 'year' in df.columns:
+                df['year'] = pd.to_numeric(df['year'], errors='coerce').astype('Int32')
+            else:
+                df['year'] = 2025  # Default year if missing
+            
+            # Convert numeric columns
+            numeric_cols = [col for col in df.columns if col != 'city' and col != 'year']
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
             
             self.drop_table('city_summary_annual')
             self.export_dataframe(df, 'city_summary_annual', if_exists='replace')

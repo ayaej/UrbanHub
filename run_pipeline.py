@@ -83,7 +83,7 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
             logger.info("\n[2/7] [SKIP] Telechargement skippe")
         
         # Étape 3: Silver Processing (Pandas + PyArrow)
-        logger.info("\n[3/7] Processing → Silver (Pandas + PyArrow)...")
+        logger.info("\n[3/7] Processing - Silver (Pandas + PyArrow)...")
         process_bronze_to_silver()
         logger.info("[OK] Silver processing termine (Parquet Snappy)")
         

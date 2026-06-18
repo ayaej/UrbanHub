@@ -38,18 +38,6 @@ def parse_noaa_csv(file_path: Path) -> Optional[pd.DataFrame]:
     try:
         df = pd.read_csv(file_path, sep=',', on_bad_lines='skip')
         
-        # Renomme colonnes NOAA vers nos noms standards
-        # NOAA utilise : TMP, WND, VIS, PCP, SLP, etc.
-        column_mapping = {
-            'STATION': 'station_id',
-            'DATE': 'timestamp',
-            'TMP': 'temperature',
-            'WND': 'wind_speed',  # Format: ddd,dddSSS,c (direction, speed, quality)
-            'VIS': 'visibility',   # Format: vvvvvvv,c (en décimètre)
-            'PCP': 'precipitation', # Format: cc,ccccc,c (in, depth, quality)
-            'SLP': 'pressure',     # Format: ppppp,c (en hPa × 10)
-        }
-        
         logger.debug(f"Colonnes trouvées: {df.columns.tolist()}")
         
         # Extrait et nettoie les colonnes de base
@@ -60,15 +48,31 @@ def parse_noaa_csv(file_path: Path) -> Optional[pd.DataFrame]:
         # Traitement des variables (format NOAA complexe)
         if 'TMP' in df.columns:
             data['temperature'] = df['TMP'].apply(lambda x: parse_noaa_value(x, 'TMP'))
+        else:
+            data['temperature'] = np.nan
+            
         if 'WND' in df.columns:
             data['wind_speed'] = df['WND'].apply(lambda x: parse_noaa_wind_speed(x))
             data['wind_direction'] = df['WND'].apply(lambda x: parse_noaa_wind_direction(x))
+        else:
+            data['wind_speed'] = np.nan
+            data['wind_direction'] = np.nan
+            
         if 'VIS' in df.columns:
             data['visibility'] = df['VIS'].apply(lambda x: parse_noaa_visibility(x))
+        else:
+            data['visibility'] = np.nan
+            
         if 'PCP' in df.columns:
             data['precipitation'] = df['PCP'].apply(lambda x: parse_noaa_precipitation(x))
+        else:
+            # Precipitation pas disponible dans ce CSV NOAA
+            data['precipitation'] = np.nan
+            
         if 'SLP' in df.columns:
             data['pressure'] = df['SLP'].apply(lambda x: parse_noaa_pressure(x))
+        else:
+            data['pressure'] = np.nan
         
         return data
         
@@ -209,14 +213,22 @@ def clean_and_enrich(df: pd.DataFrame, station_id: str) -> pd.DataFrame:
     df['hour'] = df['datetime'].dt.hour
     df['season'] = df['month'].apply(get_season)
     
+    # Assure que toutes les colonnes numériques existent
+    numeric_cols = ['temperature', 'wind_speed', 'wind_direction', 'pressure', 'precipitation', 'visibility']
+    for col in numeric_cols:
+        if col not in df.columns:
+            df[col] = np.nan
+    
     # Stats valeurs manquantes
-    missing = df[['temperature', 'wind_speed', 'pressure', 'precipitation', 'visibility']].isna().sum()
-    logger.info(f"{station_id}: Valeurs manquantes: temp={missing['temperature']}, "
-                f"wind={missing['wind_speed']}, pressure={missing['pressure']}")
+    available_cols = [col for col in ['temperature', 'wind_speed', 'pressure', 'visibility'] if col in df.columns]
+    if available_cols:
+        missing = df[available_cols].isna().sum()
+        logger.info(f"{station_id}: Missing - temp={missing.get('temperature', 0) if 'temperature' in available_cols else 'N/A'}, wind={missing.get('wind_speed', 0) if 'wind_speed' in available_cols else 'N/A'}")
     
     # Imputation simple (forward fill puis valeur médiane par station/mois)
-    numeric_cols = ['temperature', 'wind_speed', 'wind_direction', 'pressure', 'precipitation', 'visibility']
-    df[numeric_cols] = df[numeric_cols].fillna(method='ffill').fillna(df[numeric_cols].median())
+    for col in numeric_cols:
+        if col in df.columns and df[col].notna().any():
+            df[col] = df[col].ffill().fillna(df[col].median())
     
     return df
 
@@ -245,7 +257,7 @@ def process_bronze_to_silver():
     Pipeline complet Bronze → Silver
     """
     logger.info("=" * 60)
-    logger.info("Traitement Bronze → Silver (nettoyage)")
+    logger.info("Traitement Bronze - Silver (nettoyage)")
     logger.info("=" * 60)
     
     bronze_files = list(BRONZE_DIR.glob("**/*.csv"))
