@@ -17,21 +17,17 @@ from utils import setup_logger, get_season
 
 logger = setup_logger("silver_processor", "logs/silver_processor.log")
 
-# Mapping des stations aux villes (simplifié)
+# Mapping des stations NOAA aux villes
+# Codes: WMO_ID => Ville
 STATION_TO_CITY = {
-    'LFPG': 'Paris', 'LFPO': 'Paris',
-    'LFBD': 'Bordeaux',
-    'LFML': 'Marseille',
-    'LFGG': 'Biarritz',
-    'LFLY': 'Lyon',
-    'LFTH': 'Toulouse',
-    'LFST': 'Strasbourg',
-    'LFPN': 'Nancy',
-    'LFRN': 'Rennes',
-    'LFPT': 'Pointe-à-Pitre',
-    'LFMN': 'Nice',
-    'LFLW': 'Lille',
-    'LFRJ': 'Nantes',
+    '07015099999': 'Paris',
+    '07149099999': 'Paris',
+    '07480099999': 'Lyon',
+    '07610099999': 'Toulouse',
+    '07650099999': 'Marseille',
+    '07761099999': 'Nice',
+    '07586099999': 'Strasbourg',
+    '07379099999': 'Nantes',
 }
 
 def parse_noaa_csv(file_path: Path) -> Optional[pd.DataFrame]:

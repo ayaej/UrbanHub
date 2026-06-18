@@ -16,23 +16,17 @@ GOLD_DIR = DATA_LAKE_ROOT / "gold" / "weather"
 for dir_path in [BRONZE_DIR, SILVER_DIR, GOLD_DIR]:
     dir_path.mkdir(parents=True, exist_ok=True)
 
-# Stations météo France - Sélection (IATA codes + ICAO)
+# Stations météo France - Codes NOAA réels (WMO IDs)
+# Format: WMO_ID => (Ville, ICAO)
 FRENCH_STATIONS = {
-    'LFPG': 'Paris CDG',           # Paris
-    'LFPO': 'Paris Orly',          # Paris
-    'LFBD': 'Bordeaux',            # Bordeaux
-    'LFML': 'Marseille',           # Marseille
-    'LFGG': 'Biarritz',            # Biarritz
-    'LFLY': 'Lyon',                # Lyon
-    'LFTH': 'Toulouse',            # Toulouse
-    'LFST': 'Strasbourg',          # Strasbourg
-    'LFPN': 'Nancy',               # Nancy
-    'LFRN': 'Rennes',              # Rennes
-    'LFPT': 'Pointe-à-Pitre',      # Guadeloupe
-    'LFMN': 'Nice',                # Nice
-    'LFLW': 'Lille',               # Lille
-    'LFRJ': 'Nantes',              # Nantes
-    'LFLY': 'Lyon',                # Lyon
+    '07015099999': ('Paris CDG', 'LFPG'),           # Paris
+    '07149099999': ('Paris Orly', 'LFPO'),          # Paris
+    '07480099999': ('Lyon', 'LFLY'),                # Lyon
+    '07610099999': ('Toulouse', 'LFTH'),            # Toulouse
+    '07650099999': ('Marseille', 'LFML'),           # Marseille
+    '07761099999': ('Nice', 'LFMN'),                # Nice
+    '07586099999': ('Strasbourg', 'LFST'),          # Strasbourg
+    '07379099999': ('Nantes', 'LFRJ'),              # Nantes
 }
 
 # Période d'analyse

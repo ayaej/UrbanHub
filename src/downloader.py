@@ -36,28 +36,24 @@ def create_session() -> requests.Session:
 
 def list_noaa_files(station_id: str, year: int) -> List[str]:
     """
-    Liste les fichiers disponibles sur le serveur NOAA pour une station et année
-    Retourne: liste des URLs de fichiers
+    Construit l'URL NOAA pour une station et année
+    Format: https://www.ncei.noaa.gov/data/global-hourly/access/YYYY/STATION_ID.csv
+    Retourne: liste avec l'URL unique du fichier
     """
-    index_url = f"{NOAA_BASE_URL}/{year}/{station_id}/"
+    # Construit directement l'URL (un seul fichier par station/année)
+    file_url = f"{NOAA_BASE_URL}/{year}/{station_id}.csv"
     
     try:
         session = create_session()
-        response = session.get(index_url, timeout=TIMEOUT)
+        # Vérifie que le fichier existe avec HEAD request
+        response = session.head(file_url, timeout=TIMEOUT)
         response.raise_for_status()
         
-        # Extrait les liens des fichiers CSV
-        lines = response.text.split('\n')
-        file_urls = [
-            urljoin(index_url, line.split('href="')[1].split('"')[0])
-            for line in lines if '.csv' in line and 'href=' in line
-        ]
-        
-        logger.info(f"Trouvé {len(file_urls)} fichiers pour {station_id}/{year}")
-        return file_urls
+        logger.debug(f"✓ Trouvé: {station_id}/{year}")
+        return [file_url]
         
     except Exception as e:
-        logger.error(f"Erreur listing {station_id}/{year}: {e}")
+        logger.warning(f"✗ Fichier absent: {station_id}/{year} - {e}")
         return []
 
 def download_file(url: str, destination: Path, station_id: str, year: int) -> Tuple[bool, str]:
