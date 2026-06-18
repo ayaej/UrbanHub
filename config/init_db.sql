@@ -1,6 +1,9 @@
 -- UrbanHub Database Initialization
 -- Initialise PostgreSQL avec tables et permissions
 
+-- Création base n8n
+CREATE DATABASE n8n;
+
 -- Création utilisateur n8n
 CREATE USER n8n_user WITH PASSWORD 'n8n_password';
 GRANT ALL PRIVILEGES ON DATABASE n8n TO n8n_user;

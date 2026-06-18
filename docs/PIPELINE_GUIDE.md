@@ -383,6 +383,6 @@ Pour questions ou problèmes:
 
 ---
 
-**Dernière mise à jour:** 2025-06-18  
+**Dernière mise à jour:** 2026-06-18  
 **Version:** 1.0  
 **Status:** 🟢 Production

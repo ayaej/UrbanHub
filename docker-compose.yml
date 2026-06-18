@@ -30,7 +30,6 @@ services:
       POSTGRES_DB: urbanhub
       POSTGRES_USER: urbanhub_user
       POSTGRES_PASSWORD: urbanhub_password
-      POSTGRES_INITDB_ARGS: "-c max_connections=200"
     ports:
       - "5432:5432"
     volumes:

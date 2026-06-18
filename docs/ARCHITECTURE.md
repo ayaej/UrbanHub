@@ -229,5 +229,5 @@ Gold: data/lake/gold/weather/weather_daily.parquet
 ---
 
 **Architecture Version:** 1.0  
-**Last Updated:** 2025-06-18  
+**Last Updated:** 2026-06-18  
 **Maintainer:** UrbanHub Project Team

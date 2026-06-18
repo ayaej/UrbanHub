@@ -184,4 +184,4 @@ print("Tendance pluviométrique:", precip_trend.to_dict())
 ---
 
 **Version:** 1.0  
-**Dernière mise à jour:** 2025-06-18
+**Dernière mise à jour:** 2026-06-18
