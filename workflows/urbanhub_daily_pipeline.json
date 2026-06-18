@@ -14,15 +14,14 @@
     },
     {
       "parameters": {
-        "command": "cd /app && python run_pipeline.py --skip-download=false",
-        "workingDirectory": "/app"
+        "command": "cd /app && python run_pipeline.py --skip-download=false"
       },
       "name": "Execute Pipeline",
-      "type": "n8n-nodes-base.executeCommand",
+      "type": "n8n-nodes-base.ssh",
       "typeVersion": 1,
       "position": [300, 100],
       "credentials": {
-        "local": "SSH_Credentials"
+        "ssh": "SSH_Credentials"
       }
     },
     {
