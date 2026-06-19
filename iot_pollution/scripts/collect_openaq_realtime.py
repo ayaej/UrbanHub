@@ -1,15 +1,15 @@
-# fichier: collect_openaq_realtime.py
-
 import json
+import os
+import signal
+import sys
 import time
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-import os
 import requests
 from dotenv import load_dotenv
-from datetime import datetime, timezone
 
 # -----------------------
 # Configuration
@@ -34,6 +34,16 @@ CYCLE_SLEEP_SECONDS = 300  # 5 minutes
 MIN_VALUE = 0.0
 MAX_VALUE = 500.0
 
+# Unités standardisées par polluant (3.3 – uniformisation des unités)
+UNIT_MAP: Dict[str, str] = {
+    "pm25": "µg/m³",
+    "pm10": "µg/m³",
+    "no2":  "µg/m³",
+    "o3":   "µg/m³",
+    "co":   "mg/m³",
+    "so2":  "µg/m³",
+}
+
 # -----------------------
 # Logging
 # -----------------------
@@ -42,6 +52,22 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
+
+# -----------------------
+# Graceful shutdown
+# -----------------------
+
+_running = True
+
+
+def _handle_stop(sig, frame):  # noqa: ANN001
+    global _running
+    logging.info("Signal %s reçu – arrêt gracieux en cours...", sig)
+    _running = False
+
+
+signal.signal(signal.SIGTERM, _handle_stop)
+signal.signal(signal.SIGINT, _handle_stop)
 
 # -----------------------
 # Fonctions utilitaires
@@ -62,7 +88,7 @@ def load_sensors(file_path: Path) -> List[Dict[str, Any]]:
         sensors = json.load(f)
     if not isinstance(sensors, list):
         raise ValueError("Le fichier JSON des capteurs doit contenir une liste")
-    logging.info("%s capteurs chargés depuis %s", len(sensors), file_path)
+    logging.info("%d capteurs chargés depuis %s", len(sensors), file_path)
     return sensors
 
 
@@ -70,6 +96,11 @@ def is_value_valid(value: float) -> bool:
     if value is None:
         return False
     return MIN_VALUE <= value <= MAX_VALUE
+
+
+def normalize_unit(pollutant: str, raw_unit: Optional[str]) -> str:
+    """Retourne l'unité standardisée pour le polluant, ou conserve l'unité brute."""
+    return UNIT_MAP.get(pollutant.lower(), raw_unit or "unknown")
 
 
 def build_headers() -> Dict[str, str]:
@@ -82,34 +113,24 @@ def build_headers() -> Dict[str, str]:
 def fetch_latest_for_sensor(sensor: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     location_id = sensor.get("location_id") or sensor.get("id")
     if not location_id:
-        logging.warning("Capteur sans location_id/id : %s", sensor)
+        logging.warning("Capteur sans location_id/id : %s", sensor.get("name"))
         return None
 
     url = f"{OPENAQ_BASE_URL}/locations/{location_id}/latest"
-    params = {"limit": 1, "page": 1}
 
     try:
-        resp = requests.get(url, params=params, headers=build_headers(), timeout=10)
-        logging.info(
-            "Status latest (%s): %s %s",
-            location_id,
-            resp.status_code,
-            resp.text[:200],
-        )
+        resp = requests.get(url, headers=build_headers(), timeout=10)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        logging.error(
-            "Erreur lors de l'appel OpenAQ v3 pour le capteur %s : %s", sensor, e
-        )
+        logging.error("Erreur OpenAQ pour capteur %s : %s", location_id, e)
         return None
 
     results = data.get("results") or []
     if not results:
         return None
 
-    latest = results[0]
-    return latest
+    return results[0]
 
 
 def build_event(sensor: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, Any]:
@@ -117,28 +138,33 @@ def build_event(sensor: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, Any
     coords = latest.get("coordinates") or {}
     parameter = latest.get("parameter") or {}
 
-    event = {
-        "sensor_id": sensor.get("location_id") or sensor.get("id"),
+    pollutant = (
+        parameter.get("name") if isinstance(parameter, dict) else parameter
+    ) or "unknown"
+
+    raw_unit = latest.get("unit")
+    unit = normalize_unit(pollutant, raw_unit)
+
+    # sensor_id stable : location_id + polluant
+    location_id = sensor.get("location_id") or sensor.get("id")
+    sensor_id = f"{location_id}_{pollutant}" if location_id else "unknown"
+
+    return {
+        "sensor_id": sensor_id,
+        "location_id": location_id,
         "sensor_name": sensor.get("name") or latest.get("location"),
-        "pollutant": (
-            parameter.get("name")
-            if isinstance(parameter, dict)
-            else parameter
-        ) or "unknown",
-        "value": latest.get("value"),
-        "unit": latest.get("unit"),
-        "datetime_utc": datetime_info.get("utc"),
-        "datetime_local": datetime_info.get("local"),
+        "city": sensor.get("city"),
         "latitude": coords.get("latitude"),
         "longitude": coords.get("longitude"),
-        "raw": {
-            "sensor": sensor,
-            "latest": latest,
-        },
+        "pollutant": pollutant,
+        "value": latest.get("value"),
+        "unit": unit,
+        "datetime_utc": datetime_info.get("utc"),
+        "datetime_local": datetime_info.get("local"),
+        "source": "OpenAQ",
         "ingested_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    return event
 
 # -----------------------
 # Boucle principale
@@ -146,45 +172,59 @@ def build_event(sensor: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, Any
 
 def main():
     sensors = load_sensors(SENSORS_FILE)
-
-    logging.info("%s capteurs chargés depuis %s", len(sensors), SENSORS_FILE)
     ensure_bronze_dir()
 
-    while True:
+    cycle = 0
+    total_messages = 0
+    total_bytes = 0
+
+    while _running:
+        cycle += 1
+        cycle_messages = 0
+        cycle_start = datetime.now(timezone.utc)
+
         for sensor in sensors:
-            sensor_id = str(
-                sensor.get("location_id")
-                or sensor.get("id")
-                or sensor.get("name")
-                or "unknown"
-            )
+            if not _running:
+                break
+
+            location_id = sensor.get("location_id") or sensor.get("id") or "unknown"
 
             latest = fetch_latest_for_sensor(sensor)
             if not latest:
-                logging.info(
-                    "Aucune mesure exploitable pour capteur %s, on passe.", sensor_id
-                )
+                logging.debug("Aucune mesure pour capteur %s", location_id)
                 continue
 
             value = latest.get("value")
             if value is None or not is_value_valid(value):
-                logging.info(
-                    "Valeur invalide pour capteur %s : %s, ignorée.",
-                    sensor_id,
-                    value,
-                )
+                logging.debug("Valeur invalide pour capteur %s : %s", location_id, value)
                 continue
 
             event = build_event(sensor, latest)
+            line = json.dumps(event, ensure_ascii=False) + "\n"
             append_to_bronze_file(event)
-            logging.info(
-                "Mesure écrite dans Bronze pour capteur %s (value=%s)",
-                sensor_id,
-                value,
-            )
 
-        logging.info("Cycle terminé, pause de %s s...", CYCLE_SLEEP_SECONDS)
-        time.sleep(CYCLE_SLEEP_SECONDS)
+            cycle_messages += 1
+            total_messages += 1
+            total_bytes += len(line.encode("utf-8"))
+
+        elapsed = (datetime.now(timezone.utc) - cycle_start).total_seconds()
+
+        # Stats de volume (3.2 – documentation)
+        logging.info(
+            "Cycle %d terminé : %d messages en %.1fs | "
+            "Total cumulé : %d messages, %.1f Ko",
+            cycle, cycle_messages, elapsed,
+            total_messages, total_bytes / 1024,
+        )
+
+        if _running:
+            time.sleep(CYCLE_SLEEP_SECONDS)
+
+    logging.info(
+        "Arrêt propre – %d cycles, %d messages, %.1f Ko écrits dans Bronze.",
+        cycle, total_messages, total_bytes / 1024,
+    )
+    sys.exit(0)
 
 
 if __name__ == "__main__":
