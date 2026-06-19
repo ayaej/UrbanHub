@@ -1,0 +1,225 @@
+{
+  "name": "UrbanHub – Orchestrateur Principal",
+  "active": true,
+  "nodes": [
+
+    {
+      "id": "trigger-manual",
+      "name": "Déclencheur manuel",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [160, 240]
+    },
+
+    {
+      "id": "trigger-cron",
+      "name": "Déclencheur CRON (2h00)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [160, 400],
+      "parameters": {
+        "rule": "everyDay",
+        "hour": 2,
+        "minute": 0
+      }
+    },
+
+    {
+      "id": "init-minio",
+      "name": "1. Init Data Lake MinIO",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [420, 320],
+      "parameters": {
+        "command": "python3 -c \"\nimport boto3, os\nfrom botocore.exceptions import ClientError\n\nendpoint = os.getenv('MINIO_ENDPOINT', 'minio:9000')\naccess   = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')\nsecret   = os.getenv('MINIO_SECRET_KEY', 'minioadmin')\n\ns3 = boto3.client('s3', endpoint_url=f'http://{endpoint}',\n    aws_access_key_id=access, aws_secret_access_key=secret,\n    region_name='us-east-1')\n\nfor bucket in ['urbanhub', 'citybikes-raw']:\n    try:\n        s3.head_bucket(Bucket=bucket)\n        print(f'Bucket OK: {bucket}')\n    except ClientError:\n        s3.create_bucket(Bucket=bucket)\n        print(f'Bucket cree: {bucket}')\n\nprint('MinIO Data Lake pret')\n\""
+      }
+    },
+
+    {
+      "id": "meteo-pipeline",
+      "name": "2. Pipeline Météo NOAA (Partie 1)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [700, 180],
+      "parameters": {
+        "command": "cd /home/node/pipeline && python3 run_pipeline.py --use-minio --use-postgres --workers 4 2>&1"
+      }
+    },
+
+    {
+      "id": "meteo-check",
+      "name": "2b. Vérifier résultat météo",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [960, 180],
+      "parameters": {
+        "functionCode": "const out = items[0].json;\nconst ok  = out.exitCode === 0;\nconst log = (out.stdout || '').slice(-400);\nconsole.log('[Météo]', ok ? 'OK' : 'ERREUR', log);\nreturn [{ json: { step: 'meteo', success: ok, exitCode: out.exitCode, preview: log } }];"
+      }
+    },
+
+    {
+      "id": "iot-upload-minio",
+      "name": "3. Bronze IoT → MinIO (Partie 3)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [700, 340],
+      "parameters": {
+        "command": "cd /home/node/pipeline && python3 iot_pollution/scripts/upload_bronze_to_minio.py 2>&1"
+      }
+    },
+
+    {
+      "id": "iot-get-cursor",
+      "name": "4. IoT Silver – Lire curseur",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [700, 500],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT last_line FROM iot_processing_state WHERE pipeline = 'bronze_to_silver';"
+      },
+      "credentials": { "postgres": "UrbanHub Postgres" }
+    },
+
+    {
+      "id": "iot-read-bronze",
+      "name": "4b. IoT Silver – Lire Bronze",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [960, 500],
+      "parameters": {
+        "command": "cat /files/bronze_iot/bronze_iot_openaq.log 2>/dev/null || echo ''"
+      }
+    },
+
+    {
+      "id": "iot-split-clean",
+      "name": "4c. IoT Silver – Parser & Nettoyer",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1220, 500],
+      "parameters": {
+        "functionCode": "const UNIT_MAP = { pm25:'µg/m³', pm10:'µg/m³', no2:'µg/m³', o3:'µg/m³', co:'mg/m³', so2:'µg/m³' };\nconst lastLine = Number($node['4. IoT Silver – Lire curseur'].json.last_line || 0);\nconst content  = items[0].json.stdout || '';\nconst lines    = content.split('\\n');\nconst out = [];\nfor (let i = lastLine; i < lines.length; i++) {\n  const t = lines[i].trim();\n  if (!t) continue;\n  try {\n    const row = JSON.parse(t);\n    const v = Number(row.value);\n    if (Number.isNaN(v) || v < 0 || v > 500) continue;\n    const dt = new Date(row.datetime_utc);\n    if (isNaN(dt.getTime())) continue;\n    const pol = (row.pollutant || 'unknown').toLowerCase();\n    out.push({ json: {\n      sensor_id: row.sensor_id, location_id: row.location_id || null,\n      sensor_name: row.sensor_name || null, city: row.city || null,\n      latitude: row.latitude != null ? Number(row.latitude) : null,\n      longitude: row.longitude != null ? Number(row.longitude) : null,\n      pollutant: pol, value: v,\n      unit: UNIT_MAP[pol] || row.unit || 'unknown',\n      datetime_utc: dt.toISOString(), source: row.source || 'OpenAQ',\n      _new_last_line: i + 1 === lines.length ? lines.length : null\n    }});\n  } catch(e) {}\n}\nif (out.length > 0) out[out.length-1].json._new_last_line = lines.length;\nreturn out;"
+      }
+    },
+
+    {
+      "id": "iot-upsert-silver",
+      "name": "4d. IoT Silver – UPSERT",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1480, 500],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO silver_iot_clean\n  (sensor_id, location_id, sensor_name, city, latitude, longitude, pollutant, value, unit, datetime_utc, source)\nVALUES\n  ('{{$json[\"sensor_id\"]}}',\n   {{$json[\"location_id\"] !== null ? $json[\"location_id\"] : 'NULL'}},\n   {{$json[\"sensor_name\"] ? \"'\" + $json[\"sensor_name\"].replace(/'/g,\"''\") + \"'\" : 'NULL'}},\n   {{$json[\"city\"] ? \"'\" + $json[\"city\"].replace(/'/g,\"''\") + \"'\" : 'NULL'}},\n   {{$json[\"latitude\"]  !== null ? $json[\"latitude\"]  : 'NULL'}},\n   {{$json[\"longitude\"] !== null ? $json[\"longitude\"] : 'NULL'}},\n   '{{$json[\"pollutant\"]}}', {{$json[\"value\"]}}, '{{$json[\"unit\"]}}',\n   '{{$json[\"datetime_utc\"]}}', '{{$json[\"source\"]}}')\nON CONFLICT (sensor_id, pollutant, datetime_utc) DO NOTHING;"
+      },
+      "credentials": { "postgres": "UrbanHub Postgres" }
+    },
+
+    {
+      "id": "iot-update-cursor",
+      "name": "4e. IoT Silver – MAJ curseur",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1740, 500],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE iot_processing_state\n   SET last_line  = (SELECT COALESCE(MAX(v), last_line) FROM (VALUES ({{$json[\"_new_last_line\"] || 0}})) AS t(v)),\n       updated_at = NOW()\n WHERE pipeline = 'bronze_to_silver';"
+      },
+      "credentials": { "postgres": "UrbanHub Postgres" }
+    },
+
+    {
+      "id": "iot-gold-hourly",
+      "name": "5. IoT Gold – Agrégats horaires",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [700, 680],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO gold_pollution_hourly\n  (sensor_id, pollutant, hour_utc, city, latitude, longitude, avg_value, max_value, min_value, samples_count, computed_at)\nSELECT\n  sensor_id, pollutant,\n  DATE_TRUNC('hour', datetime_utc) AS hour_utc,\n  MAX(city), AVG(latitude), AVG(longitude),\n  ROUND(AVG(value)::NUMERIC, 2),\n  MAX(value), MIN(value), COUNT(*), NOW()\nFROM silver_iot_clean\nWHERE datetime_utc >= DATE_TRUNC('hour', NOW()) - INTERVAL '1 hour'\n  AND datetime_utc <  DATE_TRUNC('hour', NOW())\nGROUP BY sensor_id, pollutant, DATE_TRUNC('hour', datetime_utc)\nON CONFLICT (sensor_id, pollutant, hour_utc) DO UPDATE SET\n  avg_value = EXCLUDED.avg_value, max_value = EXCLUDED.max_value,\n  min_value = EXCLUDED.min_value, samples_count = EXCLUDED.samples_count,\n  computed_at = NOW();"
+      },
+      "credentials": { "postgres": "UrbanHub Postgres" }
+    },
+
+    {
+      "id": "iot-gold-daily",
+      "name": "5b. IoT Gold – Agrégats journaliers par ville",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [960, 680],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO gold_pollution_daily_city\n  (city, pollutant, day_utc, avg_value, max_value, min_value, samples_count, sensors_count, computed_at)\nSELECT\n  city, pollutant,\n  DATE_TRUNC('day', hour_utc)::DATE AS day_utc,\n  ROUND(AVG(avg_value)::NUMERIC, 2), MAX(max_value), MIN(min_value),\n  SUM(samples_count), COUNT(DISTINCT sensor_id), NOW()\nFROM gold_pollution_hourly\nWHERE city IS NOT NULL\n  AND hour_utc >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'\n  AND hour_utc <  DATE_TRUNC('day', NOW())\nGROUP BY city, pollutant, DATE_TRUNC('day', hour_utc)::DATE\nON CONFLICT (city, pollutant, day_utc) DO UPDATE SET\n  avg_value = EXCLUDED.avg_value, max_value = EXCLUDED.max_value,\n  min_value = EXCLUDED.min_value, samples_count = EXCLUDED.samples_count,\n  sensors_count = EXCLUDED.sensors_count, computed_at = NOW();"
+      },
+      "credentials": { "postgres": "UrbanHub Postgres" }
+    },
+
+    {
+      "id": "log-run",
+      "name": "6. Enregistrer le run",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1220, 680],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS pipeline_runs (\n  id        SERIAL PRIMARY KEY,\n  ran_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n  trigger   TEXT,\n  meteo_ok  BOOLEAN,\n  notes     TEXT\n);\nINSERT INTO pipeline_runs (ran_at, trigger, meteo_ok, notes)\nVALUES (NOW(), 'master_orchestrator', true, 'Run complet : météo + IoT Bronze→Silver→Gold');"
+      },
+      "credentials": { "postgres": "UrbanHub Postgres" }
+    }
+
+  ],
+
+  "connections": {
+    "Déclencheur manuel": {
+      "main": [[{ "node": "1. Init Data Lake MinIO", "type": "main", "index": 0 }]]
+    },
+    "Déclencheur CRON (2h00)": {
+      "main": [[{ "node": "1. Init Data Lake MinIO", "type": "main", "index": 0 }]]
+    },
+    "1. Init Data Lake MinIO": {
+      "main": [[
+        { "node": "2. Pipeline Météo NOAA (Partie 1)",  "type": "main", "index": 0 },
+        { "node": "3. Bronze IoT → MinIO (Partie 3)",   "type": "main", "index": 0 },
+        { "node": "4. IoT Silver – Lire curseur",       "type": "main", "index": 0 }
+      ]]
+    },
+    "2. Pipeline Météo NOAA (Partie 1)": {
+      "main": [[{ "node": "2b. Vérifier résultat météo", "type": "main", "index": 0 }]]
+    },
+    "2b. Vérifier résultat météo": {
+      "main": [[{ "node": "6. Enregistrer le run", "type": "main", "index": 0 }]]
+    },
+    "3. Bronze IoT → MinIO (Partie 3)": {
+      "main": [[{ "node": "4. IoT Silver – Lire curseur", "type": "main", "index": 0 }]]
+    },
+    "4. IoT Silver – Lire curseur": {
+      "main": [[{ "node": "4b. IoT Silver – Lire Bronze", "type": "main", "index": 0 }]]
+    },
+    "4b. IoT Silver – Lire Bronze": {
+      "main": [[{ "node": "4c. IoT Silver – Parser & Nettoyer", "type": "main", "index": 0 }]]
+    },
+    "4c. IoT Silver – Parser & Nettoyer": {
+      "main": [[{ "node": "4d. IoT Silver – UPSERT", "type": "main", "index": 0 }]]
+    },
+    "4d. IoT Silver – UPSERT": {
+      "main": [[{ "node": "4e. IoT Silver – MAJ curseur", "type": "main", "index": 0 }]]
+    },
+    "4e. IoT Silver – MAJ curseur": {
+      "main": [[{ "node": "5. IoT Gold – Agrégats horaires", "type": "main", "index": 0 }]]
+    },
+    "5. IoT Gold – Agrégats horaires": {
+      "main": [[{ "node": "5b. IoT Gold – Agrégats journaliers par ville", "type": "main", "index": 0 }]]
+    },
+    "5b. IoT Gold – Agrégats journaliers par ville": {
+      "main": [[{ "node": "6. Enregistrer le run", "type": "main", "index": 0 }]]
+    }
+  },
+
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "executionTimeout": 3600
+  }
+}
