@@ -1,53 +1,37 @@
 FROM python:3.12-slim
 
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY citybikes_ingest.py .
-
-
-# Métadonnées
 LABEL maintainer="UrbanHub Team"
-LABEL description="UrbanHub Smart City Pipeline - NOAA Data Processing"
+LABEL description="UrbanHub – Ingester CityBikes (streaming temps réel)"
 
-# Répertoire de travail
 WORKDIR /app
 
-# Installe dépendances système
-RUN apt-get update && apt-get install -y \
+# Dépendances système
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copie requirements
+# Dépendances Python
 COPY requirements.txt .
-
-# Installe dépendances Python
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copie code source
 COPY src/ ./src/
 COPY config/ ./config/
 COPY run_pipeline.py .
+# Code source
+COPY citybikes_ingest.py .
 
-# Crée répertoires
-RUN mkdir -p logs data/lake/{bronze,silver,gold}
+# Répertoires de données
+RUN mkdir -p data/bronze_iot logs
 
 # Variables d'environnement
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV LOG_LEVEL=INFO
 
-# Port santé check (optionnel)
-EXPOSE 8000
+# Healthcheck : vérifie que le process Python tourne
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD pgrep -f citybikes_ingest.py || exit 1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=5)" || exit 1
-
-# Entrypoint
-ENTRYPOINT ["python"]
-CMD ["python", "citybikes_ingest.py","run_pipeline.py"]
+CMD ["python", "citybikes_ingest.py"]

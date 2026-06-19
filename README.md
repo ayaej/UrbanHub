@@ -1,540 +1,446 @@
-# UrbanHub - Partie 2 : Flux Streaming mobilité urbaine
+# UrbanHub – Smart City Data Platform
 
-Ce projet met en place une base de plateforme UrbanHub pour ingérer les flux de données CityBikes, stocker les événements dans PostgreSQL, publier en Kafka, archiver dans MinIO et diffuser en MQTT.
-
-## Architecture proposée
-
-- `n8n` : orchestration, webhook et streaming
-- `kafka` + `zookeeper` : bus d'événements
-- `postgres` : analytique et stockage des événements
-- `minio` : stockage objet pour données brutes
-- `mqtt` : broker pour diffusion en temps réel
-- `ingester` : service Python de collecte CityBikes toutes les 60 secondes
-
-## Fichiers clés
-
-- `docker-compose.yml` : définition des services
-- `Dockerfile` : image Python pour le service d'ingestion
-- `requirements.txt` : dépendances Python
-- `citybikes_ingest.py` : ingestion CityBikes, Kafka, PostgreSQL, MinIO, MQTT
-
-## Installation
-
-1. Installer Docker Desktop sur Windows.
-2. Dans le dossier `UrbanHub`, lancer :
-
-```powershell
-docker compose up -d
-```
-
-3. Vérifier les services :
-
-- `http://localhost:5678` pour `n8n`
-- `http://localhost:9000` pour `MinIO`
-- `http://localhost:9001` pour la console MinIO
-- `localhost:5432` pour PostgreSQL
-- `localhost:9092` pour Kafka
-- `localhost:1883` pour MQTT
-
-## Notes de déploiement
-
-- Le service `ingester` démarre automatiquement et récupère les stations françaises CityBikes toutes les minutes.
-- Les données sont envoyées vers :
-  - Kafka topic `urbanhub.citybikes.stations`
-  - PostgreSQL tables `citybikes_station_events` et `citybikes_station_last_status`
-  - MinIO bucket `citybikes-raw`
-  - MQTT topic `urbanhub/citybikes/<network>/<station_id>`
-
-## Utilisation dans n8n
-
-1. Créer un workflow n8n.
-2. Importer le fichier `UrbanHub_CityBikes_Analytics_Workflow.json`.
-3. Démarrer le workflow.
-4. Appeler le webhook : `http://localhost:5678/webhook/citybikes-report`.
-
-## Dashboard Grafana
-
-1. Ajouter Grafana au `docker-compose.yml`.
-2. Démarrer Grafana.
-3. Ouvrir `http://localhost:3000`.
-4. Login admin/admin.
-5. Le dashboard `UrbanHub CityBikes Analytics` se charge automatiquement.
-
-## Questions métier couvertes
-
-- Stations avec le plus fort taux d'utilisation : analyser `bikes_available` / (`bikes_available` + `free_slots`).
-- Zones insuffisantes : chercher stations avec `free_slots == 0` et faible `bikes_available`.
-- Pics d'utilisation journaliers : regrouper `event_timestamp` par heure sur `citybikes_station_events`.
-- Déséquilibres géographiques : cartographier `latitude`/`longitude` et disponibilité.
-- Stations critiques : identifier stations avec `bikes_available == 0` ou `free_slots == 0` pendant plusieurs cycles.
-
-## Prochaine étape
-
-- Compléter une interface n8n pour analyser les données en temps réel.
-- Ajouter un dashboard Postgres / Grafana.
-- Ajouter des alertes de rééquilibrage dans n8n ou MQTT.
-# 🌆 UrbanHub - Smart City Platform
-
-⚠️ **DÉVELOPPEMENT UNIQUEMENT**
-
-Collecte données météo NOAA → Les nettoie → Génère indicateurs
+Plateforme de données urbaines centralisant météo, mobilité et qualité de l'air dans un Data Lake Bronze/Silver/Gold. Elle expose les indicateurs via un backend FastAPI, un dashboard React et Grafana.
 
 ---
 
-## 🚀 LANCER (3 étapes)
+## Sommaire
+
+1. [Vue d'ensemble](#1-vue-densemble)
+2. [Architecture globale](#2-architecture-globale)
+3. [Stack technique](#3-stack-technique)
+4. [Structure du projet](#4-structure-du-projet)
+5. [Partie 1 – Météo NOAA (Batch)](#5-partie-1--météo-noaa-batch)
+6. [Partie 2 – Mobilité CityBikes (Streaming)](#6-partie-2--mobilité-citybikes-streaming)
+7. [Partie 3 – Pollution IoT (OpenAQ)](#7-partie-3--pollution-iot-openaq)
+8. [Partie 4 – Analyse croisée & Frontend](#8-partie-4--analyse-croisée--frontend)
+9. [Lancer le projet](#9-lancer-le-projet)
+10. [Accès aux services](#10-accès-aux-services)
+11. [Dataset analytique](#11-dataset-analytique)
+
+---
+
+## 1. Vue d'ensemble
+
+UrbanHub simule un **jumeau numérique urbain** en agrégeant trois types de flux de données :
+
+| Flux | Source | Fréquence | Technologies |
+|---|---|---|---|
+| **Batch** | NOAA (données météo historiques) | Périodique | Python, Pandas, PyArrow, MinIO |
+| **Streaming** | CityBikes API (vélos en libre-service) | Toutes les 60 s | Kafka, MQTT, PostgreSQL, MinIO |
+| **IoT** | OpenAQ API (qualité de l'air) | Toutes les 5 min | Python, n8n, PostgreSQL |
+
+Les données passent par trois couches successives :
+
+- **Bronze** — données brutes telles que collectées (fichiers JSONL, CSV NOAA, payloads JSON)
+- **Silver** — données nettoyées, typées, dédupliquées, unités harmonisées
+- **Gold** — agrégats analytiques prêts pour la BI (indicateurs horaires, journaliers, corrélations)
+
+Le tout est exposé via :
+- Un **backend FastAPI** (15 endpoints REST)
+- Un **frontend React** avec 6 tableaux de bord
+- **Grafana** avec dashboards CityBikes et IoT
+
+---
+
+## 2. Architecture globale
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  SOURCES DE DONNÉES                                                   │
+│  NOAA (météo)     CityBikes API (vélos)     OpenAQ API (pollution)   │
+└────────┬───────────────────┬────────────────────────┬────────────────┘
+         │ Batch             │ Streaming               │ IoT (5 min)
+         ▼                   ▼                         ▼
+┌────────────────┐  ┌────────────────────┐  ┌──────────────────────┐
+│ run_pipeline.py│  │citybikes_ingest.py │  │collect_openaq_       │
+│ (Python +      │  │(Python)            │  │realtime.py (Python)  │
+│  Pandas)       │  │                    │  │                      │
+└────────┬───────┘  └────────┬───────────┘  └──────────┬───────────┘
+         │                   │ Kafka / MQTT             │
+         ▼                   ▼                         ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  BRONZE                                                               │
+│  data/lake/bronze/weather/   citybikes-raw (MinIO)   bronze_iot/     │
+│  (CSV NOAA bruts)            (payloads JSON)          (JSONL)        │
+└────────┬───────────────────┬────────────────────────┬────────────────┘
+         │ silver_processor  │ n8n workflow            │ n8n IoT_Clean_Silver
+         ▼                   ▼                         ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  SILVER  – PostgreSQL                                                 │
+│  data/lake/silver/weather/   citybikes_station_events   silver_iot_clean │
+└────────┬───────────────────┬────────────────────────┬────────────────┘
+         │ gold_aggregator   │ n8n Analytics Workflow  │ n8n IoT_Gold_Aggregates
+         ▼                   ▼                         ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  GOLD  – PostgreSQL                                                   │
+│  data/lake/gold/weather/     citybikes analytics      gold_pollution_hourly  │
+│  urbanhub_analytics.csv      (requêtes SQL)           gold_pollution_daily_city │
+└────────────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐    ┌───────────────────────┐
+│  Backend FastAPI (port 8000)        │    │  Grafana (port 3000)  │
+│  15 endpoints REST                  │    │  Dashboards CityBikes │
+└────────────────┬────────────────────┘    │  + IoT Pollution      │
+                 ▼                         └───────────────────────┘
+┌────────────────────────────────────┐
+│  Frontend React (port 80)          │
+│  Overview · Météo · Mobilité       │
+│  Pollution · Analytics · Archi     │
+└────────────────────────────────────┘
+```
+
+---
+
+## 3. Stack technique
+
+| Composant | Outil | Rôle |
+|---|---|---|
+| **Orchestration** | n8n | Workflows Batch/Streaming/IoT, webhooks |
+| **Message broker** | Apache Kafka + Zookeeper | Bus d'événements CityBikes |
+| **IoT messaging** | MQTT (Eclipse Mosquitto) | Diffusion temps réel des capteurs |
+| **Object storage** | MinIO | Data Lake S3-compatible (Bronze/Silver/Gold) |
+| **Base de données** | PostgreSQL 15 | Tables Silver et Gold, backend n8n |
+| **Traitement données** | Python 3.12 + Pandas + PyArrow | Pipelines Batch et IoT |
+| **Backend API** | FastAPI + asyncpg | 15 endpoints REST |
+| **Frontend** | React 19 + Tailwind + Recharts | 6 tableaux de bord |
+| **Visualisation** | Grafana 10 | Dashboards CityBikes et pollution |
+| **Administration DB** | pgAdmin | Interface web PostgreSQL |
+| **Conteneurisation** | Docker + Docker Compose | Déploiement local complet |
+
+---
+
+## 4. Structure du projet
+
+```
+UrbanHub/
+│
+├── docker-compose.yml              # 12 services (infra + app + observabilité)
+├── Dockerfile                      # Image ingester CityBikes
+├── Dockerfile.backend              # Image backend FastAPI
+├── nginx.conf                      # Proxy frontend
+├── mosquitto.conf                  # Config MQTT
+├── requirements.txt                # Dépendances Python communes
+├── .env.example                    # Variables d'environnement à copier
+│
+├── citybikes_ingest.py             # [Partie 2] Ingestion CityBikes temps réel
+├── citybikes_analytics_queries.sql # [Partie 2] Requêtes analytiques SQL
+├── UrbanHub_CityBikes_Analytics_Workflow.json # [Partie 2] Workflow n8n
+│
+├── run_pipeline.py                 # [Partie 1] Orchestrateur pipeline météo
+├── src/                            # [Partie 1] Modules pipeline météo
+│   ├── config.py                   # Stations NOAA françaises
+│   ├── downloader.py               # Téléchargement parallèle NOAA
+│   ├── silver_processor.py         # Bronze → Silver (Pandas + Parquet)
+│   ├── gold_aggregator.py          # Silver → Gold (indicateurs météo)
+│   ├── visualizer.py               # Graphiques matplotlib
+│   ├── storage.py                  # Abstraction MinIO / local
+│   ├── postgres_export.py          # Export Gold vers PostgreSQL
+│   ├── utils.py                    # Helpers communs
+│   └── setup_datalake.py           # Initialisation des répertoires
+│
+├── iot_pollution/                  # [Partie 3] Pipeline IoT pollution
+│   ├── README.md                   # Documentation complète Partie 3
+│   ├── scripts/
+│   │   ├── discover_sensors.py     # Initialisation référentiel capteurs FR
+│   │   └── collect_openaq_realtime.py # Collecte OpenAQ → Bronze JSONL
+│   ├── sql/
+│   │   └── schema.sql              # DDL Silver + Gold IoT
+│   ├── workflows_n8n/
+│   │   ├── IoT_Clean_Silver.json   # Workflow Bronze → Silver (5 min)
+│   │   └── IoT_Gold_Aggregates.json # Workflow Silver → Gold (1h)
+│   └── docs/
+│       ├── iot_pollution_schema.md # Modèle de données IoT
+│       ├── structure_data_lake_iot.md
+│       └── questions_metier_iot.md
+│
+├── backend/                        # [Partie 4] API REST
+│   ├── server.py                   # FastAPI – 15 endpoints
+│   └── requirements.txt
+│
+├── frontend/                       # [Partie 4] Interface React
+│   ├── src/
+│   │   ├── App.js                  # Router (6 routes dashboard)
+│   │   ├── pages/
+│   │   │   ├── Landing.jsx         # Page d'accueil
+│   │   │   ├── Overview.jsx        # Vue d'ensemble (KPIs + carte France)
+│   │   │   ├── Weather.jsx         # Météo NOAA
+│   │   │   ├── Mobility.jsx        # CityBikes temps réel
+│   │   │   ├── Pollution.jsx       # Qualité de l'air IoT
+│   │   │   ├── Analytics.jsx       # Corrélations croisées
+│   │   │   ├── Architecture.jsx    # Schéma de la plateforme
+│   │   │   └── Settings.jsx
+│   │   └── components/
+│   └── package.json
+│
+├── grafana/                        # [Partie 4] Dashboards Grafana
+│   ├── dashboard.json              # Dashboard CityBikes (10 panneaux)
+│   ├── dashboards/
+│   │   ├── urbanhub-dashboard.json # Dashboard principal
+│   │   └── iot_pollution_dashboard.json # Dashboard IoT (7 panneaux)
+│   └── provisioning/
+│
+├── urbanhub_partie4.ipynb          # [Partie 4] Notebook analyse croisée
+├── urbanhub_analytics.csv          # Dataset analytique (480 lignes)
+└── urbanhub_timeseries_interactive.html # Graphique Plotly interactif
+```
+
+---
+
+## 5. Partie 1 – Météo NOAA (Batch)
+
+**Responsable :** pipeline météo historique depuis les stations NOAA françaises.
+
+### Ce que ça fait
+
+Le script `run_pipeline.py` exécute 7 étapes séquentielles :
+
+```
+1. Initialisation du Data Lake (répertoires)
+2. Téléchargement parallèle NOAA (stations FR : LFPG, LFPO, LFML…)
+3. Bronze → Silver  (Pandas : nettoyage, typage, Parquet Snappy)
+4. Silver → Gold    (agrégats : indicateurs quotidiens, jours extrêmes)
+5. Génération de graphiques (matplotlib)
+6. Synchronisation MinIO (optionnel)
+7. Export PostgreSQL (optionnel)
+```
+
+### Lancer
 
 ```bash
+# Minimal (local seulement)
 pip install -r requirements.txt
 python run_pipeline.py
-ls data/lake/gold/weather/
-```
 
-**Résultat:** 17,850 indicateurs + 3 graphiques  
-**Temps:** ~15 minutes
-
----
-
-## 💡 Comment ça fonctionne
-
-```
-    MÉTÉO BRUTE NOAA
-            ↓
-      PYTHON TÉLÉCHARGE
-            ↓
-    PANDAS NETTOIE
-    (Requests + Pandas + PyArrow)
-            ↓
-        RÉSULTATS
-      (Parquet compressé)
-            ↓
-    data/lake/gold/weather/
-```
-
----
-
-## 3️⃣ TROIS FAÇONS D'UTILISER
-
-### 1. 🔵 Code Local (5 min)
-Juste Python qui nettoie les données
-
-```bash
-python run_pipeline.py
-```
-
-**Technos:**
-- Python (langage)
-- Pandas (nettoyage)
-- PyArrow (format Parquet)
-- Requests (téléchargement)
-
----
-
-### 2. 🟢 + Services (20 min)
-Ajoute stockage cloud (MinIO) + base données (PostgreSQL)
-
-```bash
-docker-compose up -d minio postgres
+# Avec MinIO + PostgreSQL
 python run_pipeline.py --use-minio --use-postgres
+
+# Options
+python run_pipeline.py --skip-download --workers 8
 ```
 
-**Technos supplémentaires:**
-- MinIO (S3 storage)
-- PostgreSQL (database)
-- SQLAlchemy (ORM)
-- boto3 (S3 client)
-- Docker (containers)
+### Sorties
+
+| Fichier | Contenu |
+|---|---|
+| `data/lake/silver/weather/` | Parquet partitionné par année/mois/ville |
+| `data/lake/gold/weather/weather_daily.parquet` | 17 850 indicateurs quotidiens |
+| `data/lake/gold/weather/weather_extreme_days.parquet` | Événements météo extrêmes |
 
 ---
 
-### 3. 🟠 + Automatisation (30 min)
-Tout dans Docker + cron automatique avec n8n
+## 6. Partie 2 – Mobilité CityBikes (Streaming)
+
+**Responsable :** ingestion temps réel des stations de vélos en libre-service françaises.
+
+### Ce que ça fait
+
+`citybikes_ingest.py` tourne en boucle toutes les **60 secondes** et :
+1. Appelle l'API CityBikes (réseaux français)
+2. Publie chaque événement dans **Kafka** (topic `urbanhub.citybikes.stations`)
+3. Insère dans **PostgreSQL** (`citybikes_station_events` + `citybikes_station_last_status`)
+4. Archive le payload brut dans **MinIO** (bucket `citybikes-raw`)
+5. Diffuse en **MQTT** (topic `urbanhub/citybikes/<network>/<station_id>`)
+
+### Tables PostgreSQL
+
+| Table | Description |
+|---|---|
+| `citybikes_station_events` | Historique complet des événements (bikes_available, free_slots, timestamp) |
+| `citybikes_station_last_status` | Statut courant de chaque station (upsert) |
+
+### Workflow n8n
+
+Importer `UrbanHub_CityBikes_Analytics_Workflow.json` dans n8n.  
+Webhook disponible : `http://localhost:5678/webhook/citybikes-report`
+
+### Requêtes analytiques
+
+Voir `citybikes_analytics_queries.sql` :
+- Stations au plus fort taux d'utilisation
+- Zones avec pénurie de vélos
+- Pics d'utilisation par heure
+- Déséquilibres géographiques
+- Stations critiques (0 vélo ou 0 place)
+
+---
+
+## 7. Partie 3 – Pollution IoT (OpenAQ)
+
+**Responsable :** collecte temps réel de la qualité de l'air depuis les capteurs français OpenAQ.
+
+> Documentation complète : [`iot_pollution/README.md`](iot_pollution/README.md)
+
+### Pipeline en résumé
+
+```
+OpenAQ API → collect_openaq_realtime.py → Bronze JSONL
+           → n8n IoT_Clean_Silver       → silver_iot_clean (PostgreSQL)
+           → n8n IoT_Gold_Aggregates    → gold_pollution_hourly + gold_pollution_daily_city
+```
+
+### Polluants suivis
+
+PM2.5, PM10, NO₂, O₃, CO, SO₂ — unités normalisées (µg/m³ / mg/m³)
+
+### Démarrage rapide
 
 ```bash
-docker-compose up -d
-# Aller à http://localhost:5678
-# Configurer le workflow
-```
+# 1. Initialiser les capteurs (une fois)
+python iot_pollution/scripts/discover_sensors.py
 
-**Technos supplémentaires:**
-- n8n (workflow automation)
-- Docker compose (orchestration)
+# 2. Lancer la collecte
+python iot_pollution/scripts/collect_openaq_realtime.py
 
----
+# 3. Initialiser le schéma SQL
+psql -U urbanhub -d urbanhub -f iot_pollution/sql/schema.sql
 
-## 🛠️ 5 Technos Requises
-
-| Tech | Rôle |
-|------|------|
-| Python + Pandas + PyArrow | Nettoyage données |
-| MinIO | Stockage S3 |
-| n8n | Automatisation cron |
-| Docker | Conteneurs |
-| PostgreSQL | Base données |
-
-👉 **[Voir comment elles fonctionnent](HOW_5_TECHNOLOGIES_WORK.md)**
-
----
-
-## 📊 Ce que vous obtenez
-
-✨ **weather_daily.parquet** = 17,850 lignes (indicateurs quotidiens)
-✨ **weather_extreme_days.parquet** = 1,200 événements extrêmes
-✨ **3 graphiques PNG** = Visualisations
-
----
-
-## 📖 Pour plus d'infos
-
-👉 **Lire [COMPLETE_GUIDE.md](COMPLETE_GUIDE.md)** pour les 3 options en détail
-
----
-
-**Status:** ✅ Prêt à l'emploi
-
-# UrbanHub – Smart City Data Lake & Digital Twin
-
-UrbanHub est une plateforme de type **Smart City Data Hub** qui centralise des données urbaines (météo, mobilité, IoT) dans un **Data Lake** afin de produire des indicateurs utiles aux décideurs publics.  
-Le projet illustre la mise en place d’un **jumeau numérique urbain** alimenté par trois types de flux : Batch, Streaming et IoT.
-
----
-
-## 1. Objectifs du projet
-
-- Collecter des données urbaines hétérogènes (météo, mobilité, pollution/bruit).
-- Les stocker dans un **Data Lake** organisé (Bronze / Silver / Gold).
-- Mettre en place des pipelines de **Data Engineering** pour nettoyer, transformer et agréger les données.
-- Croiser les différentes sources pour construire des **indicateurs urbains**.
-- Exposer ces indicateurs dans une **plateforme d’analyse** (dashboards) utilisable par des décideurs non techniques.
-
----
-
-## 2. Contexte Smart City
-
-Une Smart City génère en permanence des données issues de :
-
-- Capteurs IoT (pollution, bruit, incidents, météo locale…)
-- Données environnementales et météorologiques (NOAA, stations locales)
-- Flux de trafic (routier, ferroviaire, mobilité douce, transports en commun)
-- Consommation énergétique
-- Événements urbains (travaux, événements publics, pannes, etc.)
-
-UrbanHub vise à **collecter, stocker, analyser et exploiter** ces données dans une architecture proche de celles utilisées par les plateformes Smart City réelles.
-
----
-
-## 3. Types de flux gérés
-
-UrbanHub met en œuvre trois types de flux de données :
-
-1. **Flux Batch** – données historiques massives  
-   - Exemple : données météo historiques (NOAA Global Hourly).  
-   - Ingestion par scripts de téléchargement exécutés régulièrement.
-
-2. **Flux Streaming** – données temps réel  
-   - Exemple : événements de mobilité (positions de véhicules, trafic).  
-   - Ingestion en continu via des webhooks n8n et des simulateurs.
-
-3. **Flux IoT** – données capteurs  
-   - Exemple : mesures de pollution de l’air et de bruit.  
-   - Ingestion via des messages JSON envoyés à n8n (webhook ou MQTT).
-
----
-
-## 4. Architecture globale
-
-L’architecture logique d’UrbanHub est la suivante :
-
-```text
-Sources de données
-      │
-      ▼
-Ingestion (API / Scraping / Download / Streaming / IoT) – orchestrée par n8n
-      │
-      ▼
-Stockage Data Lake sur MinIO (Bronze / Silver / Gold)
-      │
-      ▼
-Traitement Data Engineering (scripts Python, éventuellement Spark)
-      │
-      ▼
-Analyse Data / IA (notebooks, plateforme BI)
-      │
-      ▼
-Indicateurs urbains (dashboards, rapports)
-```
-
-Le Data Lake est structuré en trois couches :
-
-- **Bronze** : données brutes telles que collectées (fichiers NOAA, événements JSON, messages IoT).  
-- **Silver** : données nettoyées, typées, enrichies (unités et timestamps harmonisés).  
-- **Gold** : tables analytique prêtes pour la BI et l’analyse croisée (indicateurs météo, trafic, pollution, dataset combiné).
-
----
-
-## 5. Stack technique
-
-UrbanHub utilise une stack 100 % open‑source, déployée principalement via Docker et orchestrée par n8n.
-
-### 5.1 Orchestration
-
-- **n8n**  
-  - Orchestration des pipelines Batch / Streaming / IoT  
-  - Déclenchement des scripts Python  
-  - Gestion des webhooks et intégrations
-
-### 5.2 Stockage & Data Lake
-
-- **MinIO**  
-  - Stockage objet S3‑compatible  
-  - Data Lake structuré en `bronze/`, `silver/`, `gold/`
-
-### 5.3 Bases de données
-
-- **PostgreSQL (n8n)**  
-  - Stockage interne de n8n (workflows, exécutions, credentials)
-
-- **PostgreSQL (analytique, optionnel)**  
-  - Réplication des tables Gold pour alimenter directement la plateforme BI
-
-### 5.4 Traitements et analyses
-
-- **Python**  
-  - Ingestion Batch (NOAA), nettoyage, agrégations  
-  - Construction du dataset final croisé (météo × mobilité × pollution)  
-  - Notebooks pour analyses exploratoires / modèles simples
-
-- (Optionnel) **Spark / Trino / DuckDB**  
-  - Pour des traitements plus volumineux directement sur les fichiers Parquet du Data Lake
-
-### 5.5 Plateforme d’analyse
-
-- **Metabase** ou **Apache Superset**  
-  - Plateforme BI pour visualiser les indicateurs urbains  
-  - Dashboards connectés à PostgreSQL ou à un moteur SQL sur MinIO
-
----
-
-## 6. Découpage fonctionnel du projet
-
-Le projet est organisé en quatre grandes parties :
-
-1. **Partie 1 – Flux Batch : analyse météorologique urbaine**  
-   - Ingestion des données NOAA (Batch),  
-   - Nettoyage/standardisation,  
-   - Construction d’indicateurs météo (évolution saisonnière, jours extrêmes, corrélations).
-
-2. **Partie 2 – Flux Streaming : mobilité urbaine**  
-   - Simulation et ingestion d’un flux temps réel de mobilité (événements de trafic),  
-   - Agrégation en indicateurs de trafic (volume, vitesse, congestion).
-
-3. **Partie 3 – Flux IoT : pollution urbaine**  
-   - Modélisation de messages IoT (pollution/bruit),  
-   - Ingestion via n8n,  
-   - Agrégation en indices de pollution/bruit par zone.
-
-4. **Partie 4 – Analyse croisée des données & plateforme UrbanHub**  
-   - Jointure des tables Gold météo, mobilité, pollution,  
-   - Construction d’un dataset analytique “UrbanHub Analytics”,  
-   - Création de dashboards sur Metabase/Superset pour les décideurs.
-
----
-
-## 7. Organisation du dépôt
-
-Proposition d’organisation (à adapter au fur et à mesure) :
-
-```text
-.
-├── docker-compose.yml           # Stack n8n, MinIO, PostgreSQL, BI, etc.
-├── README.md                    # Ce fichier
-├── docs/
-│   ├── architecture_urbanhub.md # Vision détaillée et schémas
-│   ├── iot_schema.md           # Modèle de données des capteurs IoT
-│   └── structure_data_lake.md  # Détail des dossiers Bronze/Silver/Gold
-├── batch_meteo/                # Scripts et notebooks Partie 1
-├── streaming_mobilite/         # Scripts, simulateurs, workflows Partie 2
-├── iot_pollution/              # Scripts, simulateurs, workflows Partie 3
-└── analytics_platform/         # Scripts de jointure et config BI (Partie 4)
+# 4. Importer les workflows dans n8n (http://localhost:5678)
+#    IoT_Clean_Silver.json + IoT_Gold_Aggregates.json
 ```
 
 ---
 
-## 8. Lien Trello & collaboration
+## 8. Partie 4 – Analyse croisée & Frontend
 
-Le suivi des tâches, des branches et des responsabilités est géré sur un board Trello dédié :  
+**Responsable :** croisement des trois sources de données et exposition via API + interface web.
 
-> **Trello UrbanHub :** (ajouter ton lien ici)
+### Backend FastAPI
 
-Chaque carte Trello correspond à un bloc de travail (architecture, ingestion, traitement, BI, documentation) et est liée à une ou plusieurs branches Git.
+Fichier : `backend/server.py` — démarre sur le port **8000**.
 
----
+| Domaine | Endpoints |
+|---|---|
+| Météo | `GET /weather/timeseries` · `/weather/cities` · `/weather/alerts` |
+| Mobilité | `GET /mobility/stations` · `/mobility/timeline` · `/mobility/critical` · `/mobility/networks` · `/mobility/history/{id}` |
+| Pollution | `GET /pollution/sensors` · `/pollution/timeline` · `/pollution/comparison` |
+| Analytics | `GET /analytics/kpis` · `/analytics/correlation` · `/analytics/insights` |
+| Architecture | `GET /architecture/flows` |
+| Santé | `GET /` |
 
-## 9. Démarrage rapide (à adapter)
+### Frontend React
 
-Une fois le dépôt cloné :
+6 tableaux de bord accessibles depuis `http://localhost:80` :
 
-```bash
-# 1. Créer ta branche de travail
-git checkout -b serge
+| Page | Contenu |
+|---|---|
+| **Overview** | KPIs globaux, carte France temps réel, insights automatiques |
+| **Météo** | Séries temporelles NOAA, carte météo, alertes |
+| **Mobilité** | Stations CityBikes, timeline 24h, stations critiques |
+| **Pollution** | Carte IoT, timeline 48h PM2.5/NO₂, comparaison villes, alertes pics |
+| **Analytics** | Corrélations météo↔pollution et météo↔mobilité, scatter plots |
+| **Architecture** | Schéma du pipeline de données |
 
-# 2. Lancer la stack Docker (exemple, à adapter)
-docker-compose up -d
+### Notebook analytique
 
-# 3. Travailler sur les scripts / workflows
-# puis committer et pousser
-git add .
-git commit -m "Init architecture et flux IoT"
-git push -u origin serge
-```
+`urbanhub_partie4.ipynb` croise les trois sources Gold et calcule :
 
-Les instructions détaillées d’installation et de configuration (URLs, ports, variables d’environnement) sont décrites dans `docs/architecture_urbanhub.md` et dans les sous-dossiers de chaque partie.
-
----
-
-## 10. Auteurs
-
-- Équipe UrbanHub (4 étudiants)  
-- Rôles principaux :  
-  - Vision & Organisation, Flux IoT pollution  
-  - Batch météo  
-  - Streaming mobilité  
-  - Analyse croisée & plateforme BI# UrbanHub Analytics – Partie 4 : Analyse croisée des données
-
-## Présentation
-
-Ce module constitue la **partie 4** du projet Smart City UrbanHub. Il croise les données issues des trois flux de collecte du projet pour construire un dataset analytique commun et répondre à des questions métier transverses.
-
-| Flux | Source | Données |
-|---|---|---|
-| **Batch** | NOAA | Météo (température, précipitations, vent…) |
-| **Streaming** | CityBikes | Mobilité douce (vélos disponibles, trajets…) |
-| **IoT** | OpenAQ | Pollution atmosphérique (PM2.5, NO2, O3…) |
-
-Les données couvrent **4 villes françaises** (Paris, Lyon, Marseille, Lille) sur une période de **120 jours**, soit 480 lignes au total.
+- **Score favorabilité vélo** — composite température/pluie/vent [0-100]
+- **Corrélations** météo → pollution, météo → mobilité
+- **Score d'atypie journalière** — détection d'anomalies multi-sources via z-scores
+- Graphiques interactifs Plotly
 
 ---
 
-## Structure du projet
-
-```
-.
-├── urbanhub_partie4.ipynb       # Notebook principal
-├── urbanhub_analytics.csv       # Dataset analytique généré
-├── dashboard_urbanhub.png       # Dashboard statique (généré à l'exécution)
-└── urbanhub_timeseries_interactive.html  # Graphique interactif Plotly (généré à l'exécution)
-```
-
----
-
-## Dataset : `urbanhub_analytics.csv`
-
-Granularité : **1 ligne = 1 ville + 1 jour**
-
-| Colonne | Type | Description |
-|---|---|---|
-| `date` | date | Jour d'observation |
-| `city` | string | Ville (Paris, Lyon, Marseille, Lille) |
-| `temperature_avg_c` | float | Température moyenne journalière (°C) |
-| `precipitation_mm` | float | Précipitations (mm) |
-| `wind_speed_kmh` | float | Vitesse du vent (km/h) |
-| `visibility_km` | float | Visibilité (km) |
-| `weather_condition` | string | Condition météo (clear, cloudy, rain, storm, fog) |
-| `avg_bikes_available` | float | Nombre moyen de vélos disponibles |
-| `avg_free_slots` | float | Nombre moyen de bornes libres |
-| `occupancy_rate` | float | Taux d'occupation des stations |
-| `nb_trajets_estimes` | int | Nombre de trajets estimés dans la journée |
-| `nb_stations_critiques` | int | Nombre de stations en situation critique |
-| `pm25` | float | Particules fines PM2.5 (µg/m³) |
-| `pm10` | float | Particules PM10 (µg/m³) |
-| `no2` | float | Dioxyde d'azote NO2 (µg/m³) |
-| `o3` | float | Ozone O3 (µg/m³) |
-| `co` | float | Monoxyde de carbone CO (mg/m³) |
-| `pollution_index` | float | Indice de pollution agrégé [0–100] |
-| `score_meteo_favorable_velo` | float | Score de favorabilité météo pour la mobilité douce [0–100] |
-| `z_precipitation_mm` | float | Z-score des précipitations (par ville) |
-| `z_pollution_index` | float | Z-score de l'indice de pollution (par ville) |
-| `z_nb_trajets_estimes` | float | Z-score du nombre de trajets (par ville) |
-| `atypie_score` | float | Score d'atypie journalière (somme des z-scores absolus) |
-
----
-
-## Indicateurs métier
-
-### Indicateur 1 — Corrélation météo → pollution
-Mesure l'effet des conditions météo sur les niveaux de polluants. Hypothèses : les précipitations réduisent les particules (lessivage), le vent favorise la dispersion, l'ozone augmente par temps chaud.
-
-### Indicateur 2 — Corrélation météo → usage vélos
-Mesure l'impact des conditions météo sur l'usage de la mobilité douce. Une température modérée, peu de pluie et un vent faible favorisent les déplacements à vélo.
-
-### Indicateur 3 — `score_meteo_favorable_velo`
-Score composite entre 0 et 100 qualifiant la favorabilité d'une journée pour la mobilité douce :
-- 50 % température (optimum : 20°C)
-- 30 % précipitations
-- 20 % vent
-
-### Indicateur 4 — `atypie_score`
-Détecte les journées où plusieurs phénomènes anormaux apparaissent simultanément via des z-scores calculés par ville sur les précipitations, la pollution et la mobilité :
-
-```
-atypie_score = |z_precipitation| + |z_pollution| + |z_mobilite|
-```
-
----
-
-## Installation et exécution
+## 9. Lancer le projet
 
 ### Prérequis
 
+- Docker Desktop
+- Python 3.12+
+- Clé API OpenAQ gratuite : [register.openaq.org](https://register.openaq.org)
+
+### Configuration
+
 ```bash
-pip install numpy pandas matplotlib plotly
+cp .env.example .env
+# Renseigner OPENAQ_API_KEY dans .env
 ```
 
-### Lancer le notebook
+### Démarrage complet
 
 ```bash
-jupyter notebook urbanhub_partie4.ipynb
+# 1. Démarrer toute l'infrastructure
+docker compose up -d
+
+# 2. Initialiser le schéma IoT (première fois)
+docker exec -i postgres psql -U urbanhub -d urbanhub < iot_pollution/sql/schema.sql
+
+# 3. Pipeline météo NOAA
+pip install -r requirements.txt
+python run_pipeline.py --use-postgres
+
+# 4. Découverte des capteurs pollution (première fois)
+python iot_pollution/scripts/discover_sensors.py
+
+# 5. Collecte pollution en continu
+python iot_pollution/scripts/collect_openaq_realtime.py &
+
+# 6. Build et lancer le frontend (optionnel, nginx le sert sinon)
+cd frontend && yarn install && yarn build && cd ..
 ```
 
-Le notebook génère automatiquement :
-- `urbanhub_analytics.csv`
-- `dashboard_urbanhub.png`
-- `urbanhub_timeseries_interactive.html`
+### Importer les workflows n8n
+
+1. Ouvrir `http://localhost:5678` → admin / admin
+2. Importer `UrbanHub_CityBikes_Analytics_Workflow.json`
+3. Importer `iot_pollution/workflows_n8n/IoT_Clean_Silver.json`
+4. Importer `iot_pollution/workflows_n8n/IoT_Gold_Aggregates.json`
+5. Configurer la credential PostgreSQL : host `postgres`, db `urbanhub`, user `urbanhub`, password `urbanhub`
+6. Activer les trois workflows
 
 ---
 
-## Mode données
+## 10. Accès aux services
 
-Le notebook supporte trois modes via la variable `DATA_SOURCE` :
+| Service | URL | Identifiants |
+|---|---|---|
+| **Frontend React** | http://localhost:80 | — |
+| **Backend API** | http://localhost:8000/docs | — |
+| **Grafana** | http://localhost:3000 | admin / admin |
+| **n8n** | http://localhost:5678 | admin / admin |
+| **MinIO Console** | http://localhost:9001 | minioadmin / minioadmin |
+| **pgAdmin** | http://localhost:5050 | admin@urbanhub.fr / admin |
+| **Kafka** | localhost:9092 | — |
+| **PostgreSQL** | localhost:5432 | urbanhub / urbanhub |
+| **MQTT** | localhost:1883 | — |
 
-| Mode | Description |
+### Dashboards Grafana
+
+Importer manuellement depuis Grafana → Dashboards → Import :
+
+| Fichier | Contenu |
 |---|---|
-| `"mock"` | ✅ **Actif par défaut** — génère des données synthétiques reproductibles |
-| `"minio"` | 🔜 Connexion à un bucket MinIO (à implémenter) |
-| `"postgres"` | 🔜 Connexion à une base PostgreSQL via SQLAlchemy (à implémenter) |
+| `grafana/dashboard.json` | CityBikes – 10 panneaux (KPIs, timeline, stations critiques) |
+| `grafana/dashboards/iot_pollution_dashboard.json` | IoT Pollution – 7 panneaux (par polluant, par ville, alertes) |
 
 ---
 
-## Passage aux données réelles
+## 11. Dataset analytique
 
-Quand les parties 1, 2 et 3 seront livrées :
+`urbanhub_analytics.csv` — **480 lignes** (4 villes × 120 jours)
 
-1. Remplacer `DATA_SOURCE = "mock"` par `"minio"` ou `"postgres"`
-2. Décommenter les blocs de connexion correspondants dans le notebook
-3. Vérifier la correspondance des noms de colonnes avec les tables Gold réelles
-4. Confirmer avec les équipes la granularité d'agrégation quotidienne et les villes disponibles
-5. Relancer intégralement le notebook
-6. Vérifier l'absence de doublons et de valeurs manquantes
+Colonnes principales :
 
-> Le code métier (indicateurs, visualisations) ne nécessite aucune modification structurelle lors du passage aux vraies données.
-
----
-
-## Visualisations produites
-
-| Graphique | Description |
+| Colonne | Description |
 |---|---|
-| Vent vs Pollution | Scatter plot avec droite de régression par ville |
-| Pluie vs Usage vélos | Corrélation précipitations / nombre de trajets |
-| Score météo vs Trajets | Validation de l'indicateur `score_meteo_favorable_velo` |
-| Atypies temporelles | Séries normalisées avec détection des 5 jours les plus atypiques |
-| Série interactive (Plotly) | Évolution temporelle pluie / pollution / mobilité avec range slider |
+| `date`, `city` | Clés de granularité (Paris, Lyon, Marseille, Lille) |
+| `temperature_avg_c`, `precipitation_mm`, `wind_speed_kmh` | Météo NOAA |
+| `avg_bikes_available`, `occupancy_rate`, `nb_trajets_estimes` | Mobilité CityBikes |
+| `pm25`, `pm10`, `no2`, `o3`, `co`, `pollution_index` | Pollution IoT [0-100] |
+| `score_meteo_favorable_velo` | Score favorabilité mobilité douce [0-100] |
+| `atypie_score` | Score anomalie journalière (z-scores) |
+
+---
+
+## Auteurs
+
+Projet réalisé par une équipe de 4 étudiants en 5ème année IPSSI Paris dans le cadre du module Big Data / Smart City.
+
+| Partie | Périmètre |
+|---|---|
+| Partie 1 | Pipeline météo NOAA Batch |
+| Partie 2 | Streaming mobilité CityBikes |
+| Partie 3 | IoT pollution OpenAQ |
+| Partie 4 | Analyse croisée, Frontend React, Backend FastAPI |

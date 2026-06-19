@@ -11,7 +11,7 @@
         "name": "pollutant",
         "type": "query",
         "label": "Polluant",
-        "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+        "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
         "query": "SELECT DISTINCT pollutant FROM gold_pollution_hourly ORDER BY 1",
         "multi": true,
         "includeAll": true,
@@ -21,7 +21,7 @@
         "name": "city",
         "type": "query",
         "label": "Ville",
-        "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+        "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
         "query": "SELECT DISTINCT city FROM gold_pollution_daily_city WHERE city IS NOT NULL ORDER BY 1",
         "multi": true,
         "includeAll": true,
@@ -35,7 +35,7 @@
       "title": "Évolution horaire de la pollution par polluant",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT\n  hour_utc AS time,\n  ROUND(AVG(avg_value)::NUMERIC, 2) AS value,\n  pollutant AS metric\nFROM gold_pollution_hourly\nWHERE hour_utc BETWEEN $__timeFrom() AND $__timeTo()\n  AND ('$pollutant' = 'All' OR pollutant IN ($pollutant))\n  AND ('$city' = 'All' OR city IN ($city))\nGROUP BY hour_utc, pollutant\nORDER BY hour_utc",
@@ -54,7 +54,7 @@
       "title": "Niveau moyen de pollution par ville (dernières 24h)",
       "type": "bargauge",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT\n  city AS metric,\n  ROUND(AVG(avg_value)::NUMERIC, 2) AS value\nFROM gold_pollution_hourly\nWHERE hour_utc >= NOW() - INTERVAL '24 hours'\n  AND city IS NOT NULL\n  AND ('$pollutant' = 'All' OR pollutant IN ($pollutant))\nGROUP BY city\nORDER BY value DESC\nLIMIT 15",
@@ -85,7 +85,7 @@
       "title": "Valeur maximale par polluant (dernières 24h)",
       "type": "stat",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT\n  pollutant AS metric,\n  MAX(max_value) AS value\nFROM gold_pollution_hourly\nWHERE hour_utc >= NOW() - INTERVAL '24 hours'\n  AND ('$pollutant' = 'All' OR pollutant IN ($pollutant))\n  AND ('$city' = 'All' OR city IN ($city))\nGROUP BY pollutant\nORDER BY pollutant",
@@ -113,7 +113,7 @@
       "title": "Tendance journalière par ville",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT\n  day_utc::TIMESTAMPTZ AS time,\n  ROUND(avg_value::NUMERIC, 2) AS value,\n  city || ' – ' || pollutant AS metric\nFROM gold_pollution_daily_city\nWHERE day_utc BETWEEN $__timeFrom()::DATE AND $__timeTo()::DATE\n  AND ('$pollutant' = 'All' OR pollutant IN ($pollutant))\n  AND ('$city' = 'All' OR city IN ($city))\nORDER BY day_utc",
@@ -132,7 +132,7 @@
       "title": "Nombre total de mesures (24h)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 24 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT NOW() AS time, SUM(samples_count) AS value\nFROM gold_pollution_hourly\nWHERE hour_utc >= NOW() - INTERVAL '24 hours'",
@@ -146,7 +146,7 @@
       "title": "Nombre de capteurs actifs",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 24 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT NOW() AS time, COUNT(DISTINCT sensor_id) AS value\nFROM gold_pollution_hourly\nWHERE hour_utc >= NOW() - INTERVAL '24 hours'",
@@ -160,7 +160,7 @@
       "title": "Villes avec pollution PM2.5 > 50 µg/m³ (alerte)",
       "type": "table",
       "gridPos": { "h": 4, "w": 12, "x": 12, "y": 24 },
-      "datasource": { "type": "postgres", "uid": "UrbanHub_IoT_Postgres" },
+      "datasource": { "type": "postgres", "uid": "urbanhub-postgres" },
       "targets": [
         {
           "rawSql": "SELECT\n  city,\n  ROUND(avg_value::NUMERIC, 1) AS \"Moy PM2.5 (µg/m³)\",\n  ROUND(max_value::NUMERIC, 1) AS \"Max PM2.5 (µg/m³)\",\n  samples_count                AS \"Mesures\"\nFROM gold_pollution_daily_city\nWHERE pollutant = 'pm25'\n  AND day_utc = CURRENT_DATE - 1\n  AND avg_value > 50\nORDER BY avg_value DESC",
