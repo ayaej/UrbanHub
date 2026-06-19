@@ -1,0 +1,102 @@
+{
+  "name": "IoT_Clean_Silver",
+  "active": true,
+  "nodes": [
+    {
+      "id": "Cron_Trigger",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "parameters": {
+        "triggerTimes": [
+          {
+            "hour": 0,
+            "minute": 0
+          }
+        ],
+        "mode": "everyX",
+        "everyX": 5,
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "Postgres_Select_Bronze",
+      "name": "Select Bronze (1h)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [520, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, sensor_id, sensor_name, parameter, value, unit, datetime_utc, latitude, longitude\nFROM bronze_iot_raw\nWHERE datetime_utc >= NOW() - INTERVAL '1 hour';"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    },
+    {
+      "id": "Function_Clean",
+      "name": "Clean & Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [800, 300],
+      "parameters": {
+        "functionCode": "const cleaned = [];\n\nfor (const item of items) {\n  const row = item.json;\n  const v = Number(row.value);\n\n  if (Number.isNaN(v)) {\n    continue;\n  }\n\n  if (v < 0 || v > 500) {\n    continue;\n  }\n\n  const dt = new Date(row.datetime_utc);\n  if (isNaN(dt.getTime())) {\n    continue;\n  }\n  const dtUtc = dt.toISOString();\n\n  const unit = 'µg/m³';\n\n  cleaned.push({\n    json: {\n      sensor_id: row.sensor_id,\n      sensor_name: row.sensor_name,\n      parameter: row.parameter || 'pm25',\n      value: v,\n      unit,\n      datetime_utc: dtUtc,\n      latitude: row.latitude,\n      longitude: row.longitude\n    }\n  });\n}\n\nreturn cleaned;"
+      }
+    },
+    {
+      "id": "Postgres_Insert_Silver",
+      "name": "Insert Silver",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1080, 300],
+      "parameters": {
+        "operation": "insert",
+        "table": "silver_iot_clean",
+        "columns": "sensor_id,sensor_name,parameter,value,unit,datetime_utc,latitude,longitude",
+        "values": "={{$json[\"sensor_id\"]}},{{$json[\"sensor_name\"]}},{{$json[\"parameter\"]}},{{$json[\"value\"]}},{{$json[\"unit\"]}},{{$json[\"datetime_utc\"]}},{{$json[\"latitude\"]}},{{$json[\"longitude\"]}}"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Select Bronze (1h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Bronze (1h)": {
+      "main": [
+        [
+          {
+            "node": "Clean & Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean & Normalize": {
+      "main": [
+        [
+          {
+            "node": "Insert Silver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionTimeout": 900
+  }
+}

@@ -1,12 +1,12 @@
 {
-  "name": "IoT OpenAQ ingestion",
+  "name": "IoT Pollution Bronze (JSONL, no validate node)",
   "nodes": [
     {
-      "id": "Webhook_IoT_OpenAQ",
-      "name": "Webhook IoT OpenAQ",
+      "id": "Webhook_IoT_Pollution",
+      "name": "Webhook IoT Pollution",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [300, 300],
+      "typeVersion": 2,
+      "position": [260, 300],
       "parameters": {
         "httpMethod": "POST",
         "path": "iot-openaq",
@@ -15,26 +15,29 @@
         "options": {
           "responseContentType": "application/json"
         }
-      }
+      },
+      "webhookId": "iot-pollution-webhook"
     },
     {
-      "id": "Function_Validate",
-      "name": "Validate & Enrich",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [600, 300],
-      "parameters": {
-        "functionCode": "const item = items[0];\n\n// Vérification minimale\nconst required = [\"sensor_id\",\"timestamp\",\"pollutant\",\"value\",\"unit\",\"latitude\",\"longitude\"];\nfor (const k of required) {\n  if (item.json[k] === undefined || item.json[k] === null) {\n    throw new Error(`Champ manquant ou nul: ${k}`);\n  }\n}\n\n// Enrichissement simple\nitem.json.ingested_at = new Date().toISOString();\n\nreturn items;"
-      }
-    },
-    {
-      "id": "Function_ToFile",
+      "id": "Function_JSONL",
       "name": "Format JSONL",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [900, 300],
+      "position": [620, 300],
       "parameters": {
-        "functionCode": "const item = items[0];\nconst line = JSON.stringify(item.json) + '\\n';\nreturn [{ json: { line } }];"
+        "functionCode": "const item = items[0];\n// On suppose que item.json contient déjà l'événement enrichi envoyé par Python\nconst line = JSON.stringify(item.json) + '\\n';\nreturn [{ json: { line } }];"
+      }
+    },
+    {
+      "id": "Convert_To_File",
+      "name": "Convert to File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1,
+      "position": [920, 300],
+      "parameters": {
+        "property": "line",
+        "binaryProperty": "data",
+        "fileName": "bronze_iot_openaq.log"
       }
     },
     {
@@ -42,7 +45,7 @@
       "name": "Append to Bronze File",
       "type": "n8n-nodes-base.writeBinaryFile",
       "typeVersion": 1,
-      "position": [1200, 300],
+      "position": [1220, 300],
       "parameters": {
         "fileName": "/data/bronze_iot_openaq.log",
         "options": {
@@ -53,18 +56,7 @@
     }
   ],
   "connections": {
-    "Webhook IoT OpenAQ": {
-      "main": [
-        [
-          {
-            "node": "Validate & Enrich",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate & Enrich": {
+    "Webhook IoT Pollution": {
       "main": [
         [
           {
@@ -79,6 +71,17 @@
       "main": [
         [
           {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
             "node": "Append to Bronze File",
             "type": "main",
             "index": 0
@@ -87,6 +90,11 @@
       ]
     }
   },
-  "settings": {},
-  "versionId": "iot-openaq-ingestion-v1"
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "iot-pollution-bronze-jsonl-no-validate-v1",
+  "meta": {
+    "instanceId": "local"
+  }
 }
