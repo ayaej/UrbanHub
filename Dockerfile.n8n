@@ -1,0 +1,32 @@
+FROM n8nio/n8n:latest
+
+USER root
+
+# Installe Python 3 + pip + dépendances système nécessaires à psycopg2 et scipy
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    build-base \
+    libffi-dev \
+    postgresql-dev \
+    freetype-dev \
+    libpng-dev
+
+# Installe les dépendances Python du pipeline UrbanHub
+# pyspark exclu (trop lourd pour ce contexte)
+RUN pip3 install --no-cache-dir \
+    requests \
+    pandas \
+    numpy \
+    pyarrow \
+    python-dotenv \
+    boto3 \
+    s3fs \
+    psycopg2-binary \
+    sqlalchemy \
+    matplotlib \
+    scipy \
+    tqdm \
+    python-json-logger
+
+USER node
