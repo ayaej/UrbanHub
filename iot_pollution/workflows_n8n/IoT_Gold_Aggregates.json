@@ -1,0 +1,87 @@
+{
+  "name": "IoT_Gold_Aggregates",
+  "active": true,
+  "nodes": [
+    {
+      "id": "Cron_Hourly",
+      "name": "Every hour",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "parameters": {
+        "mode": "everyX",
+        "everyX": 1,
+        "unit": "hours"
+      }
+    },
+    {
+      "id": "Select_Silver_PrevHour",
+      "name": "Select Silver (previous full hour)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [540, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Fenêtre fixe sur l'heure complète précédente (ex : si 14h05 → [13h00, 14h00[)\n-- Évite la dérive temporelle du bug NOW()-1h\nSELECT\n  sensor_id,\n  location_id,\n  sensor_name,\n  city,\n  latitude,\n  longitude,\n  pollutant,\n  value,\n  unit,\n  datetime_utc\nFROM silver_iot_clean\nWHERE datetime_utc >= DATE_TRUNC('hour', NOW()) - INTERVAL '1 hour'\n  AND datetime_utc <  DATE_TRUNC('hour', NOW());"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    },
+    {
+      "id": "Aggregate_Hourly",
+      "name": "Aggregate Hourly (with min)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [840, 300],
+      "parameters": {
+        "functionCode": "if (items.length === 0) return [];\n\n// Groupe par (sensor_id, pollutant, hour)\nconst groups = {};\n\nfor (const item of items) {\n  const row = item.json;\n  const sensorId  = row.sensor_id  || 'unknown';\n  const pollutant = row.pollutant   || 'unknown';\n  const value     = Number(row.value);\n  const ts        = new Date(row.datetime_utc);\n\n  if (Number.isNaN(value) || isNaN(ts.getTime())) continue;\n\n  // Heure arrondie (fenêtre fixe)\n  const hour = new Date(ts);\n  hour.setUTCMinutes(0, 0, 0);\n  const hourKey = hour.toISOString();\n\n  const key = `${sensorId}__${pollutant}__${hourKey}`;\n\n  if (!groups[key]) {\n    groups[key] = {\n      sensor_id:   sensorId,\n      pollutant:   pollutant,\n      hour_utc:    hourKey,\n      city:        row.city        || null,\n      latitude:    row.latitude    != null ? Number(row.latitude)  : null,\n      longitude:   row.longitude   != null ? Number(row.longitude) : null,\n      sum:         0,\n      max:         -Infinity,\n      min:         Infinity,\n      count:       0,\n    };\n  }\n\n  const g = groups[key];\n  g.sum   += value;\n  if (value > g.max) g.max = value;\n  if (value < g.min) g.min = value;\n  g.count += 1;\n}\n\nconst out = [];\nfor (const g of Object.values(groups)) {\n  out.push({\n    json: {\n      sensor_id:     g.sensor_id,\n      pollutant:     g.pollutant,\n      hour_utc:      g.hour_utc,\n      city:          g.city,\n      latitude:      g.latitude,\n      longitude:     g.longitude,\n      avg_value:     g.count > 0 ? Math.round((g.sum / g.count) * 100) / 100 : 0,\n      max_value:     g.max === -Infinity ? 0 : g.max,\n      min_value:     g.min ===  Infinity ? 0 : g.min,\n      samples_count: g.count,\n    }\n  });\n}\n\nreturn out;"
+      }
+    },
+    {
+      "id": "Upsert_Gold_Hourly",
+      "name": "Upsert Gold Hourly",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1140, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO gold_pollution_hourly\n  (sensor_id, pollutant, hour_utc, city, latitude, longitude,\n   avg_value, max_value, min_value, samples_count, computed_at)\nVALUES\n  ('{{$json[\"sensor_id\"]}}',\n   '{{$json[\"pollutant\"]}}',\n   '{{$json[\"hour_utc\"]}}',\n   {{$json[\"city\"] ? \"'\" + $json[\"city\"].replace(/'/g,\"''\") + \"'\" : 'NULL'}},\n   {{$json[\"latitude\"]  !== null ? $json[\"latitude\"]  : 'NULL'}},\n   {{$json[\"longitude\"] !== null ? $json[\"longitude\"] : 'NULL'}},\n   {{$json[\"avg_value\"]}},\n   {{$json[\"max_value\"]}},\n   {{$json[\"min_value\"]}},\n   {{$json[\"samples_count\"]}},\n   NOW())\nON CONFLICT (sensor_id, pollutant, hour_utc)\nDO UPDATE SET\n  avg_value     = EXCLUDED.avg_value,\n  max_value     = EXCLUDED.max_value,\n  min_value     = EXCLUDED.min_value,\n  samples_count = EXCLUDED.samples_count,\n  computed_at   = NOW();"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    },
+    {
+      "id": "Aggregate_Daily_City",
+      "name": "Aggregate Daily by City",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1420, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Agrégat journalier par ville et polluant (granularité jour)\nINSERT INTO gold_pollution_daily_city\n  (city, pollutant, day_utc, avg_value, max_value, min_value, samples_count, sensors_count, computed_at)\nSELECT\n  city,\n  pollutant,\n  DATE_TRUNC('day', hour_utc)::DATE AS day_utc,\n  ROUND(AVG(avg_value)::NUMERIC, 2) AS avg_value,\n  MAX(max_value)                    AS max_value,\n  MIN(min_value)                    AS min_value,\n  SUM(samples_count)                AS samples_count,\n  COUNT(DISTINCT sensor_id)         AS sensors_count,\n  NOW()                             AS computed_at\nFROM gold_pollution_hourly\nWHERE city IS NOT NULL\n  AND hour_utc >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'\n  AND hour_utc <  DATE_TRUNC('day', NOW())\nGROUP BY city, pollutant, DATE_TRUNC('day', hour_utc)::DATE\nON CONFLICT (city, pollutant, day_utc)\nDO UPDATE SET\n  avg_value     = EXCLUDED.avg_value,\n  max_value     = EXCLUDED.max_value,\n  min_value     = EXCLUDED.min_value,\n  samples_count = EXCLUDED.samples_count,\n  sensors_count = EXCLUDED.sensors_count,\n  computed_at   = NOW();"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    }
+  ],
+  "connections": {
+    "Every hour": {
+      "main": [[{ "node": "Select Silver (previous full hour)", "type": "main", "index": 0 }]]
+    },
+    "Select Silver (previous full hour)": {
+      "main": [[{ "node": "Aggregate Hourly (with min)", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Hourly (with min)": {
+      "main": [[{ "node": "Upsert Gold Hourly", "type": "main", "index": 0 }]]
+    },
+    "Upsert Gold Hourly": {
+      "main": [[{ "node": "Aggregate Daily by City", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionTimeout": 900
+  }
+}

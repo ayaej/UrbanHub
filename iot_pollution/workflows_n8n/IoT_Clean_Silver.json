@@ -1,0 +1,115 @@
+{
+  "name": "IoT_Clean_Silver",
+  "active": true,
+  "nodes": [
+    {
+      "id": "Cron_Trigger",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [260, 300],
+      "parameters": {
+        "mode": "everyX",
+        "everyX": 5,
+        "unit": "minutes"
+      }
+    },
+    {
+      "id": "Get_Last_Line",
+      "name": "Get Last Processed Line",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [520, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT last_line FROM iot_processing_state WHERE pipeline = 'bronze_to_silver';"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    },
+    {
+      "id": "Read_Bronze_File",
+      "name": "Read Bronze File",
+      "type": "n8n-nodes-fs.readFile",
+      "typeVersion": 1,
+      "position": [760, 300],
+      "parameters": {
+        "filePath": "/files/bronze_iot/bronze_iot_openaq.log",
+        "encoding": "utf8",
+        "propertyName": "content"
+      }
+    },
+    {
+      "id": "Split_JSONL",
+      "name": "Split JSONL (new lines only)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1020, 300],
+      "parameters": {
+        "functionCode": "// Récupère la dernière ligne déjà traitée (idempotence)\nconst lastLine = Number($node['Get Last Processed Line'].json.last_line || 0);\n\nconst lines = (items[0].json.content || '').split('\\n');\nconst out = [];\n\nfor (let i = lastLine; i < lines.length; i++) {\n  const trimmed = lines[i].trim();\n  if (!trimmed) continue;\n  try {\n    const obj = JSON.parse(trimmed);\n    obj._line_number = i + 1;\n    out.push({ json: obj });\n  } catch (e) {\n    // ignore ligne JSON invalide\n  }\n}\n\n// Expose le nouveau curseur en metadata\nif (out.length > 0) {\n  out[out.length - 1].json._new_last_line = lines.length;\n}\n\nreturn out;"
+      }
+    },
+    {
+      "id": "Function_Clean",
+      "name": "Clean & Normalize",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1280, 300],
+      "parameters": {
+        "functionCode": "// Unités standardisées par polluant (3.3 – uniformisation)\nconst UNIT_MAP = {\n  pm25: 'µg/m³',\n  pm10: 'µg/m³',\n  no2:  'µg/m³',\n  o3:   'µg/m³',\n  co:   'mg/m³',\n  so2:  'µg/m³',\n};\n\nconst cleaned = [];\n\nfor (const item of items) {\n  const row = item.json;\n  const v = Number(row.value);\n\n  if (Number.isNaN(v) || v < 0 || v > 500) continue;\n\n  const dt = new Date(row.datetime_utc);\n  if (isNaN(dt.getTime())) continue;\n\n  const pollutant = (row.pollutant || 'unknown').toLowerCase();\n  const unit = UNIT_MAP[pollutant] || row.unit || 'unknown';\n\n  cleaned.push({\n    json: {\n      sensor_id:    row.sensor_id,\n      location_id:  row.location_id || null,\n      sensor_name:  row.sensor_name || null,\n      city:         row.city || null,\n      latitude:     row.latitude  != null ? Number(row.latitude)  : null,\n      longitude:    row.longitude != null ? Number(row.longitude) : null,\n      pollutant:    pollutant,\n      value:        v,\n      unit:         unit,\n      datetime_utc: dt.toISOString(),\n      source:       row.source || 'OpenAQ',\n      _new_last_line: row._new_last_line || null,\n    }\n  });\n}\n\nreturn cleaned;"
+      }
+    },
+    {
+      "id": "Postgres_Upsert_Silver",
+      "name": "Upsert Silver",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1540, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO silver_iot_clean\n  (sensor_id, location_id, sensor_name, city, latitude, longitude,\n   pollutant, value, unit, datetime_utc, source)\nVALUES\n  ('{{$json[\"sensor_id\"]}}',\n   {{$json[\"location_id\"] !== null ? $json[\"location_id\"] : 'NULL'}},\n   {{$json[\"sensor_name\"] ? \"'\" + $json[\"sensor_name\"].replace(/'/g, \"''\") + \"'\" : 'NULL'}},\n   {{$json[\"city\"] ? \"'\" + $json[\"city\"].replace(/'/g, \"''\") + \"'\" : 'NULL'}},\n   {{$json[\"latitude\"]  !== null ? $json[\"latitude\"]  : 'NULL'}},\n   {{$json[\"longitude\"] !== null ? $json[\"longitude\"] : 'NULL'}},\n   '{{$json[\"pollutant\"]}}',\n   {{$json[\"value\"]}},\n   '{{$json[\"unit\"]}}',\n   '{{$json[\"datetime_utc\"]}}',\n   '{{$json[\"source\"]}}')\nON CONFLICT (sensor_id, pollutant, datetime_utc) DO NOTHING;"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    },
+    {
+      "id": "Update_Cursor",
+      "name": "Update Processing Cursor",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1800, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE iot_processing_state\n   SET last_line  = (SELECT COALESCE(MAX(_new_last_line_val), last_line)\n                     FROM (VALUES ({{$json[\"_new_last_line\"] || 0}})) AS t(_new_last_line_val)),\n       updated_at = NOW()\n WHERE pipeline = 'bronze_to_silver';"
+      },
+      "credentials": {
+        "postgres": "UrbanHub IoT Postgres"
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [[{ "node": "Get Last Processed Line", "type": "main", "index": 0 }]]
+    },
+    "Get Last Processed Line": {
+      "main": [[{ "node": "Read Bronze File", "type": "main", "index": 0 }]]
+    },
+    "Read Bronze File": {
+      "main": [[{ "node": "Split JSONL (new lines only)", "type": "main", "index": 0 }]]
+    },
+    "Split JSONL (new lines only)": {
+      "main": [[{ "node": "Clean & Normalize", "type": "main", "index": 0 }]]
+    },
+    "Clean & Normalize": {
+      "main": [[{ "node": "Upsert Silver", "type": "main", "index": 0 }]]
+    },
+    "Upsert Silver": {
+      "main": [[{ "node": "Update Processing Cursor", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionTimeout": 900
+  }
+}
