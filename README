@@ -205,4 +205,143 @@ Les instructions détaillées d’installation et de configuration (URLs, ports,
   - Vision & Organisation, Flux IoT pollution  
   - Batch météo  
   - Streaming mobilité  
-  - Analyse croisée & plateforme BI
+  - Analyse croisée & plateforme BI# UrbanHub Analytics – Partie 4 : Analyse croisée des données
+
+## Présentation
+
+Ce module constitue la **partie 4** du projet Smart City UrbanHub. Il croise les données issues des trois flux de collecte du projet pour construire un dataset analytique commun et répondre à des questions métier transverses.
+
+| Flux | Source | Données |
+|---|---|---|
+| **Batch** | NOAA | Météo (température, précipitations, vent…) |
+| **Streaming** | CityBikes | Mobilité douce (vélos disponibles, trajets…) |
+| **IoT** | OpenAQ | Pollution atmosphérique (PM2.5, NO2, O3…) |
+
+Les données couvrent **4 villes françaises** (Paris, Lyon, Marseille, Lille) sur une période de **120 jours**, soit 480 lignes au total.
+
+---
+
+## Structure du projet
+
+```
+.
+├── urbanhub_partie4.ipynb       # Notebook principal
+├── urbanhub_analytics.csv       # Dataset analytique généré
+├── dashboard_urbanhub.png       # Dashboard statique (généré à l'exécution)
+└── urbanhub_timeseries_interactive.html  # Graphique interactif Plotly (généré à l'exécution)
+```
+
+---
+
+## Dataset : `urbanhub_analytics.csv`
+
+Granularité : **1 ligne = 1 ville + 1 jour**
+
+| Colonne | Type | Description |
+|---|---|---|
+| `date` | date | Jour d'observation |
+| `city` | string | Ville (Paris, Lyon, Marseille, Lille) |
+| `temperature_avg_c` | float | Température moyenne journalière (°C) |
+| `precipitation_mm` | float | Précipitations (mm) |
+| `wind_speed_kmh` | float | Vitesse du vent (km/h) |
+| `visibility_km` | float | Visibilité (km) |
+| `weather_condition` | string | Condition météo (clear, cloudy, rain, storm, fog) |
+| `avg_bikes_available` | float | Nombre moyen de vélos disponibles |
+| `avg_free_slots` | float | Nombre moyen de bornes libres |
+| `occupancy_rate` | float | Taux d'occupation des stations |
+| `nb_trajets_estimes` | int | Nombre de trajets estimés dans la journée |
+| `nb_stations_critiques` | int | Nombre de stations en situation critique |
+| `pm25` | float | Particules fines PM2.5 (µg/m³) |
+| `pm10` | float | Particules PM10 (µg/m³) |
+| `no2` | float | Dioxyde d'azote NO2 (µg/m³) |
+| `o3` | float | Ozone O3 (µg/m³) |
+| `co` | float | Monoxyde de carbone CO (mg/m³) |
+| `pollution_index` | float | Indice de pollution agrégé [0–100] |
+| `score_meteo_favorable_velo` | float | Score de favorabilité météo pour la mobilité douce [0–100] |
+| `z_precipitation_mm` | float | Z-score des précipitations (par ville) |
+| `z_pollution_index` | float | Z-score de l'indice de pollution (par ville) |
+| `z_nb_trajets_estimes` | float | Z-score du nombre de trajets (par ville) |
+| `atypie_score` | float | Score d'atypie journalière (somme des z-scores absolus) |
+
+---
+
+## Indicateurs métier
+
+### Indicateur 1 — Corrélation météo → pollution
+Mesure l'effet des conditions météo sur les niveaux de polluants. Hypothèses : les précipitations réduisent les particules (lessivage), le vent favorise la dispersion, l'ozone augmente par temps chaud.
+
+### Indicateur 2 — Corrélation météo → usage vélos
+Mesure l'impact des conditions météo sur l'usage de la mobilité douce. Une température modérée, peu de pluie et un vent faible favorisent les déplacements à vélo.
+
+### Indicateur 3 — `score_meteo_favorable_velo`
+Score composite entre 0 et 100 qualifiant la favorabilité d'une journée pour la mobilité douce :
+- 50 % température (optimum : 20°C)
+- 30 % précipitations
+- 20 % vent
+
+### Indicateur 4 — `atypie_score`
+Détecte les journées où plusieurs phénomènes anormaux apparaissent simultanément via des z-scores calculés par ville sur les précipitations, la pollution et la mobilité :
+
+```
+atypie_score = |z_precipitation| + |z_pollution| + |z_mobilite|
+```
+
+---
+
+## Installation et exécution
+
+### Prérequis
+
+```bash
+pip install numpy pandas matplotlib plotly
+```
+
+### Lancer le notebook
+
+```bash
+jupyter notebook urbanhub_partie4.ipynb
+```
+
+Le notebook génère automatiquement :
+- `urbanhub_analytics.csv`
+- `dashboard_urbanhub.png`
+- `urbanhub_timeseries_interactive.html`
+
+---
+
+## Mode données
+
+Le notebook supporte trois modes via la variable `DATA_SOURCE` :
+
+| Mode | Description |
+|---|---|
+| `"mock"` | ✅ **Actif par défaut** — génère des données synthétiques reproductibles |
+| `"minio"` | 🔜 Connexion à un bucket MinIO (à implémenter) |
+| `"postgres"` | 🔜 Connexion à une base PostgreSQL via SQLAlchemy (à implémenter) |
+
+---
+
+## Passage aux données réelles
+
+Quand les parties 1, 2 et 3 seront livrées :
+
+1. Remplacer `DATA_SOURCE = "mock"` par `"minio"` ou `"postgres"`
+2. Décommenter les blocs de connexion correspondants dans le notebook
+3. Vérifier la correspondance des noms de colonnes avec les tables Gold réelles
+4. Confirmer avec les équipes la granularité d'agrégation quotidienne et les villes disponibles
+5. Relancer intégralement le notebook
+6. Vérifier l'absence de doublons et de valeurs manquantes
+
+> Le code métier (indicateurs, visualisations) ne nécessite aucune modification structurelle lors du passage aux vraies données.
+
+---
+
+## Visualisations produites
+
+| Graphique | Description |
+|---|---|
+| Vent vs Pollution | Scatter plot avec droite de régression par ville |
+| Pluie vs Usage vélos | Corrélation précipitations / nombre de trajets |
+| Score météo vs Trajets | Validation de l'indicateur `score_meteo_favorable_velo` |
+| Atypies temporelles | Séries normalisées avec détection des 5 jours les plus atypiques |
+| Série interactive (Plotly) | Évolution temporelle pluie / pollution / mobilité avec range slider |
