@@ -5,59 +5,79 @@
       "parameters": {
         "httpMethod": "GET",
         "path": "citybikes-report",
-        "responseMode": "onReceived",
-        "responseData": "firstEntryJson"
+        "responseMode": "lastNode",
+        "options": {}
       },
       "name": "CityBikes Report Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [240, 300]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT json_build_object(\n  'top_usage', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots,0)), 4) AS usage_rate,\n             ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes,\n             ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots,\n             COUNT(*) AS samples\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      ORDER BY usage_rate DESC NULLS LAST\n      LIMIT 10\n    ) r\n  ),\n  'insufficient_zones', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             COUNT(*) FILTER (WHERE bikes_available = 0) AS zero_bike_count,\n             AVG(bikes_available) AS avg_bikes,\n             AVG(free_slots) AS avg_free_slots,\n             COUNT(*) AS samples\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5\n      ORDER BY zero_bike_count DESC\n      LIMIT 20\n    ) r\n  ),\n  'daily_peaks', (\n    SELECT json_agg(r) FROM (\n      SELECT date_trunc('day', event_timestamp) AS day,\n             date_trunc('hour', event_timestamp) AS hour,\n             SUM(bikes_available) AS total_bikes,\n             SUM(free_slots) AS total_free_slots,\n             ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots,0)), 4) AS avg_usage,\n             COUNT(*) AS samples\n      FROM citybikes_station_events\n      GROUP BY date_trunc('day', event_timestamp), date_trunc('hour', event_timestamp)\n      ORDER BY day, avg_usage DESC\n      LIMIT 24\n    ) r\n  ),\n  'geographic_imbalances', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes,\n             ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots,\n             ROUND(ABS(AVG(bikes_available - free_slots))::numeric, 2) AS imbalance_score\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      ORDER BY imbalance_score DESC\n      LIMIT 20\n    ) r\n  ),\n  'critical_stations', (\n    SELECT json_agg(r) FROM (\n      SELECT station_id, station_name, network, latitude, longitude,\n             COUNT(*) FILTER (WHERE bikes_available = 0) AS no_bike_count,\n             COUNT(*) FILTER (WHERE free_slots = 0) AS no_slot_count,\n             COUNT(*) AS total_observations\n      FROM citybikes_station_events\n      GROUP BY station_id, station_name, network, latitude, longitude\n      HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5 OR COUNT(*) FILTER (WHERE free_slots = 0) > 5\n      ORDER BY GREATEST(no_bike_count, no_slot_count) DESC\n      LIMIT 20\n    ) r\n  )\n) AS report;"
+        "query": "SELECT\n  CASE\n    WHEN (SELECT COUNT(*) FROM citybikes_station_events) = 0\n    THEN json_build_object('error', 'Aucune donnée disponible. Le script d''ingestion n''a pas encore inséré de données.')\n    ELSE json_build_object(\n      'generated_at', NOW(),\n      'data_range', (\n        SELECT json_build_object(\n          'oldest', MIN(event_timestamp),\n          'newest', MAX(event_timestamp),\n          'total_events', COUNT(*),\n          'total_stations', COUNT(DISTINCT station_id)\n        )\n        FROM citybikes_station_events\n      ),\n      'top_usage', (\n        SELECT COALESCE(json_agg(r), '[]'::json) FROM (\n          SELECT\n            station_id,\n            station_name,\n            network,\n            latitude,\n            longitude,\n            ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)) * 100, 1) AS usage_rate_pct,\n            ROUND(AVG(bikes_available)::numeric, 1) AS avg_bikes,\n            ROUND(AVG(free_slots)::numeric, 1) AS avg_free_slots,\n            COUNT(*) AS samples\n          FROM citybikes_station_events\n          WHERE event_timestamp >= NOW() - INTERVAL '24 hours'\n          GROUP BY station_id, station_name, network, latitude, longitude\n          HAVING COUNT(*) >= 2\n          ORDER BY usage_rate_pct DESC NULLS LAST\n          LIMIT 10\n        ) r\n      ),\n      'insufficient_zones', (\n        SELECT COALESCE(json_agg(r), '[]'::json) FROM (\n          SELECT\n            station_id,\n            station_name,\n            network,\n            latitude,\n            longitude,\n            COUNT(*) FILTER (WHERE bikes_available = 0) AS zero_bike_count,\n            ROUND(COUNT(*) FILTER (WHERE bikes_available = 0)::numeric / COUNT(*) * 100, 1) AS zero_bike_pct,\n            ROUND(AVG(bikes_available)::numeric, 1) AS avg_bikes,\n            COUNT(*) AS samples\n          FROM citybikes_station_events\n          WHERE event_timestamp >= NOW() - INTERVAL '24 hours'\n          GROUP BY station_id, station_name, network, latitude, longitude\n          HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 0\n          ORDER BY zero_bike_pct DESC\n          LIMIT 20\n        ) r\n      ),\n      'daily_peaks', (\n        SELECT COALESCE(json_agg(r), '[]'::json) FROM (\n          SELECT\n            TO_CHAR(date_trunc('hour', event_timestamp), 'YYYY-MM-DD HH24:00') AS hour_label,\n            SUM(bikes_available) AS total_bikes,\n            SUM(free_slots) AS total_free_slots,\n            ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)) * 100, 1) AS avg_usage_pct,\n            COUNT(DISTINCT station_id) AS active_stations\n          FROM citybikes_station_events\n          WHERE event_timestamp >= NOW() - INTERVAL '48 hours'\n          GROUP BY date_trunc('hour', event_timestamp)\n          ORDER BY date_trunc('hour', event_timestamp) DESC\n          LIMIT 48\n        ) r\n      ),\n      'geographic_imbalances', (\n        SELECT COALESCE(json_agg(r), '[]'::json) FROM (\n          SELECT\n            station_id,\n            station_name,\n            network,\n            latitude,\n            longitude,\n            ROUND(AVG(bikes_available)::numeric, 1) AS avg_bikes,\n            ROUND(AVG(free_slots)::numeric, 1) AS avg_free_slots,\n            ROUND(ABS(AVG(bikes_available - free_slots))::numeric, 1) AS imbalance_score\n          FROM citybikes_station_events\n          WHERE event_timestamp >= NOW() - INTERVAL '24 hours'\n          GROUP BY station_id, station_name, network, latitude, longitude\n          HAVING COUNT(*) >= 2\n          ORDER BY imbalance_score DESC\n          LIMIT 20\n        ) r\n      ),\n      'critical_stations', (\n        SELECT COALESCE(json_agg(r), '[]'::json) FROM (\n          SELECT\n            station_id,\n            station_name,\n            network,\n            latitude,\n            longitude,\n            COUNT(*) FILTER (WHERE bikes_available = 0) AS no_bike_count,\n            COUNT(*) FILTER (WHERE free_slots = 0) AS no_slot_count,\n            COUNT(*) AS total_observations,\n            ROUND(COUNT(*) FILTER (WHERE bikes_available = 0)::numeric / COUNT(*) * 100, 1) AS no_bike_pct,\n            MAX(event_timestamp) AS last_seen\n          FROM citybikes_station_events\n          WHERE event_timestamp >= NOW() - INTERVAL '24 hours'\n          GROUP BY station_id, station_name, network, latitude, longitude\n          HAVING\n            COUNT(*) FILTER (WHERE bikes_available = 0) > 0\n            OR COUNT(*) FILTER (WHERE free_slots = 0) > 0\n          ORDER BY GREATEST(no_bike_count, no_slot_count) DESC\n          LIMIT 20\n        ) r\n      ),\n      'live_snapshot', (\n        SELECT COALESCE(json_agg(r), '[]'::json) FROM (\n          SELECT\n            station_id,\n            station_name,\n            network,\n            latitude,\n            longitude,\n            bikes_available,\n            free_slots,\n            event_timestamp AS last_update\n          FROM citybikes_station_last_status\n          ORDER BY updated_at DESC\n          LIMIT 50\n        ) r\n      )\n    )\n  END AS report;",
+        "additionalFields": {}
       },
       "name": "Postgres Analytics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [460, 300],
+      "credentials": {
+        "postgres": {
+          "name": "UrbanHub Postgres"
+        }
+      }
     },
     {
       "parameters": {
-        "responseMode": "lastNode"
+        "functionCode": "const raw = items[0].json;\nconst report = raw.report;\n\nif (report.error) {\n  return [{\n    json: {\n      success: false,\n      error: report.error,\n      timestamp: new Date().toISOString()\n    }\n  }];\n}\n\n// Calcul de métriques de synthèse\nconst topUsage = report.top_usage || [];\nconst critical = report.critical_stations || [];\nconst live = report.live_snapshot || [];\n\nconst totalBikes = live.reduce((sum, s) => sum + (s.bikes_available || 0), 0);\nconst totalSlots = live.reduce((sum, s) => sum + (s.free_slots || 0), 0);\nconst emptyStations = live.filter(s => s.bikes_available === 0).length;\nconst fullStations = live.filter(s => s.free_slots === 0).length;\n\nreturn [{\n  json: {\n    success: true,\n    generated_at: new Date().toISOString(),\n    data_range: report.data_range,\n    summary: {\n      total_stations_live: live.length,\n      total_bikes_available: totalBikes,\n      total_slots_available: totalSlots,\n      empty_stations: emptyStations,\n      full_stations: fullStations,\n      global_usage_pct: totalBikes + totalSlots > 0\n        ? Math.round(totalBikes / (totalBikes + totalSlots) * 100 * 10) / 10\n        : null\n    },\n    top_usage: topUsage,\n    insufficient_zones: report.insufficient_zones || [],\n    daily_peaks: report.daily_peaks || [],\n    geographic_imbalances: report.geographic_imbalances || [],\n    critical_stations: critical,\n    live_snapshot: live\n  }\n}];"
       },
-      "name": "Respond",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "responseMode": "lastNode",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-cache"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [900, 300]
     }
   ],
   "connections": {
     "CityBikes Report Webhook": {
-      "main": [
-        [
-          {
-            "node": "Postgres Analytics",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Postgres Analytics", "type": "main", "index": 0 }]]
     },
     "Postgres Analytics": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
+    },
+    "Build Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
     }
   },
-  "active": false,
-  "settings": {},
+  "active": true,
+  "settings": {
+    "errorWorkflow": "",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
   "id": "UrbanHubCityBikesAnalytics"
 }

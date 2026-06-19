@@ -50,9 +50,12 @@ services:
       - minio_data:/data
 
   mqtt:
-    image: eclipse-mosquitto:2.0
-    ports:
-      - "1883:1883"
+  image: eclipse-mosquitto:2.0
+  ports:
+    - "1883:1883"
+  volumes:
+    - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+  restart: unless-stopped
 
   grafana:
     image: grafana/grafana:10.0.0
@@ -104,6 +107,8 @@ services:
       MINIO_SECRET_KEY: minioadmin
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
+      CYCLE_DELAY: "300"
+
     depends_on:
       - kafka
       - postgres

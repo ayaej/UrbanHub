@@ -29,6 +29,13 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
 NETWORK_FILTER = ["FR"]
 
+# Délai de base entre les requêtes par réseau (secondes)
+REQUEST_DELAY = 2
+# Délai du cycle principal (secondes)
+CYCLE_DELAY = 60
+# Backoff max en cas de 429 (secondes)
+MAX_BACKOFF = 300
+
 
 def json_serializer(obj):
     """Convert datetime objects to ISO format strings for JSON serialization."""
@@ -37,12 +44,35 @@ def json_serializer(obj):
     raise TypeError(f"Type {type(obj)} not serializable")
 
 
-def get_france_network_ids():
-    response = requests.get(
-        CITYBIKES_API,
-        timeout=20,
-    )
+def get_with_retry(url, timeout=20, max_retries=5):
+    """
+    GET avec gestion des erreurs 429 (Too Many Requests).
+    Respecte le header Retry-After si présent, sinon backoff exponentiel.
+    """
+    delay = 10
+    for attempt in range(1, max_retries + 1):
+        response = requests.get(url, timeout=timeout)
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After")
+            wait = int(retry_after) if retry_after and retry_after.isdigit() else delay
+            wait = min(wait, MAX_BACKOFF)
+            logging.warning(
+                "429 Too Many Requests sur %s — attente %ds (tentative %d/%d)",
+                url, wait, attempt, max_retries,
+            )
+            time.sleep(wait)
+            delay = min(delay * 2, MAX_BACKOFF)  # backoff exponentiel
+            continue
+        response.raise_for_status()
+        return response
+    # Dernière tentative après le dernier sleep
+    response = requests.get(url, timeout=timeout)
     response.raise_for_status()
+    return response
+
+
+def get_france_network_ids():
+    response = get_with_retry(CITYBIKES_API)
     data = response.json().get("networks", [])
 
     networks = []
@@ -60,8 +90,7 @@ def get_france_network_ids():
 
 def fetch_network_stations(network_id):
     url = f"{CITYBIKES_API}/{network_id}"
-    response = requests.get(url, timeout=20)
-    response.raise_for_status()
+    response = get_with_retry(url)
     network = response.json().get("network", {})
     stations = network.get("stations", [])
     logging.info("Loaded %d stations for network %s", len(stations), network_id)
@@ -222,9 +251,12 @@ def main():
     except Exception:
         logging.info("Bucket %s already exists or cannot be created", MINIO_BUCKET)
 
+    # FIX : récupération de la liste des réseaux UNE SEULE FOIS au démarrage.
+    # L'appel répété toutes les 60s dans la boucle causait le rate-limiting (429).
+    networks = get_france_network_ids()
+
     while True:
         try:
-            networks = get_france_network_ids()
             for network in networks:
                 network_name, stations = fetch_network_stations(network["id"])
                 archive_raw_payload(s3_client, network_name, {"network": network, "stations": stations})
@@ -233,10 +265,12 @@ def main():
                     send_to_kafka(producer, station_data)
                     send_to_postgres(conn, station_data)
                     publish_mqtt(station_data)
-            logging.info("Cycle complete. Waiting 60 seconds.")
+                # Petit délai entre chaque réseau pour éviter le rate-limiting
+                time.sleep(REQUEST_DELAY)
+            logging.info("Cycle complete. Waiting %d seconds.", CYCLE_DELAY)
         except Exception as exc:
             logging.exception("Erreur pendant l'ingestion CityBikes: %s", exc)
-        time.sleep(60)
+        time.sleep(CYCLE_DELAY)
 
 
 if __name__ == "__main__":

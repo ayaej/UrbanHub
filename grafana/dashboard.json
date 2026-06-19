@@ -3,118 +3,533 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
         "enable": true,
         "hide": true,
-        "iconColor": "#000000",
+        "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
       }
     ]
   },
-  "description": "Dashboard for UrbanHub CityBikes analytics.",
+  "description": "UrbanHub CityBikes - tableau de bord analytique temps réel",
   "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
   "id": null,
-  "iteration": 168,
   "links": [],
   "panels": [
+
     {
-      "datasource": "PostgreSQL",
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short",
+          "mappings": []
+        },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "id": 1,
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "id": 10,
       "options": {
-        "showHeader": true
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
           "format": "table",
-          "refId": "A",
-          "target": "SELECT station_id, station_name, network, ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)), 4) AS usage_rate, ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes, ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots, COUNT(*) AS samples FROM citybikes_station_events GROUP BY station_id, station_name, network ORDER BY usage_rate DESC NULLS LAST LIMIT 20"
+          "rawSql": "SELECT COUNT(DISTINCT station_id) AS \"Stations actives\" FROM citybikes_station_last_status",
+          "refId": "A"
         }
       ],
-      "title": "Top 20 stations - usage rate",
+      "title": "Stations actives",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 100 },
+              { "color": "green", "value": 500 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "table",
+          "rawSql": "SELECT SUM(bikes_available) AS \"Vélos disponibles\" FROM citybikes_station_last_status",
+          "refId": "A"
+        }
+      ],
+      "title": "Vélos disponibles (live)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 50 },
+              { "color": "green", "value": 200 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "table",
+          "rawSql": "SELECT SUM(free_slots) AS \"Places libres\" FROM citybikes_station_last_status",
+          "refId": "A"
+        }
+      ],
+      "title": "Places libres (live)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "id": 13,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Stations vides\" FROM citybikes_station_last_status WHERE bikes_available = 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Stations vides (live)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "id": 14,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Stations pleines\" FROM citybikes_station_last_status WHERE free_slots = 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Stations pleines (live)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "id": 15,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Événements (24h)\" FROM citybikes_station_events WHERE event_timestamp >= NOW() - INTERVAL '24 hours'",
+          "refId": "A"
+        }
+      ],
+      "title": "Événements ingérés (24h)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 4 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "min"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "time_series",
+          "rawSql": "SELECT\n  date_trunc('hour', event_timestamp) AS time,\n  SUM(bikes_available) AS \"Vélos disponibles\",\n  SUM(free_slots) AS \"Places libres\"\nFROM citybikes_station_events\nWHERE $__timeFilter(event_timestamp)\nGROUP BY date_trunc('hour', event_timestamp)\nORDER BY time",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "time_series",
+          "rawSql": "SELECT\n  date_trunc('hour', event_timestamp) AS time,\n  ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)) * 100, 1) AS \"Taux d'utilisation %\"\nFROM citybikes_station_events\nWHERE $__timeFilter(event_timestamp)\nGROUP BY date_trunc('hour', event_timestamp)\nORDER BY time",
+          "refId": "B"
+        }
+      ],
+      "title": "Évolution horaire — vélos & taux d'utilisation",
+      "type": "timeseries"
+    },
+
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-BlPu" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "color-background" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 0.8 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "usage_rate_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 4 },
+      "id": 1,
+      "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "usage_rate_pct" }] },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+          "format": "table",
+          "rawSql": "SELECT\n  station_name,\n  network,\n  ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)) * 100, 1) AS usage_rate_pct,\n  ROUND(AVG(bikes_available)::numeric, 1) AS avg_bikes,\n  COUNT(*) AS samples\nFROM citybikes_station_events\nWHERE $__timeFilter(event_timestamp)\nGROUP BY station_id, station_name, network\nHAVING COUNT(*) >= 2\nORDER BY usage_rate_pct DESC NULLS LAST\nLIMIT 15",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 15 — taux d'utilisation",
       "type": "table"
     },
+
     {
-      "datasource": "PostgreSQL",
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "zero_bike_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } },
+              { "id": "thresholds", "value": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 20 },
+                  { "color": "red", "value": 50 }
+                ]
+              }}
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "id": 2,
       "options": { "showHeader": true },
       "pluginVersion": "10.0.0",
       "targets": [
         {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
           "format": "table",
-          "refId": "A",
-          "target": "SELECT station_id, station_name, network, latitude, longitude, COUNT(*) FILTER (WHERE bikes_available = 0) AS zero_bike_count, AVG(bikes_available) AS avg_bikes, AVG(free_slots) AS avg_free_slots, COUNT(*) AS samples FROM citybikes_station_events GROUP BY station_id, station_name, network, latitude, longitude HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5 ORDER BY zero_bike_count DESC LIMIT 20"
+          "rawSql": "SELECT\n  station_name,\n  network,\n  COUNT(*) FILTER (WHERE bikes_available = 0) AS zero_bike_count,\n  ROUND(COUNT(*) FILTER (WHERE bikes_available = 0)::numeric / COUNT(*) * 100, 1) AS zero_bike_pct,\n  ROUND(AVG(bikes_available)::numeric, 1) AS avg_bikes,\n  COUNT(*) AS samples\nFROM citybikes_station_events\nWHERE $__timeFilter(event_timestamp)\nGROUP BY station_id, station_name, network\nHAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 0\nORDER BY zero_bike_pct DESC\nLIMIT 20",
+          "refId": "A"
         }
       ],
-      "title": "Stations avec manque de vélos",
+      "title": "Stations avec offre insuffisante",
       "type": "table"
     },
+
     {
-      "datasource": "PostgreSQL",
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "id": 3,
-      "options": { "showHeader": true },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "format": "time_series",
-          "refId": "A",
-          "target": "SELECT date_trunc('hour', event_timestamp) AS time, ROUND(AVG(bikes_available::numeric / NULLIF(bikes_available + free_slots, 0)), 4) AS avg_usage, SUM(bikes_available) AS total_bikes, SUM(free_slots) AS total_free_slots FROM citybikes_station_events GROUP BY date_trunc('hour', event_timestamp) ORDER BY time"
-        }
-      ],
-      "title": "Pic d’utilisation horaire",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "PostgreSQL",
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "imbalance_score" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } },
+              { "id": "thresholds", "value": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 5 },
+                  { "color": "red", "value": 15 }
+                ]
+              }}
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "id": 4,
       "options": { "showHeader": true },
       "pluginVersion": "10.0.0",
       "targets": [
         {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
           "format": "table",
-          "refId": "A",
-          "target": "SELECT station_id, station_name, network, latitude, longitude, ROUND(AVG(bikes_available)::numeric, 2) AS avg_bikes, ROUND(AVG(free_slots)::numeric, 2) AS avg_free_slots, ROUND(ABS(AVG(bikes_available - free_slots))::numeric, 2) AS imbalance_score FROM citybikes_station_events GROUP BY station_id, station_name, network, latitude, longitude ORDER BY imbalance_score DESC LIMIT 20"
+          "rawSql": "SELECT\n  station_name,\n  network,\n  ROUND(AVG(bikes_available)::numeric, 1) AS avg_bikes,\n  ROUND(AVG(free_slots)::numeric, 1) AS avg_free_slots,\n  ROUND(ABS(AVG(bikes_available - free_slots))::numeric, 1) AS imbalance_score\nFROM citybikes_station_events\nWHERE $__timeFilter(event_timestamp)\nGROUP BY station_id, station_name, network\nHAVING COUNT(*) >= 2\nORDER BY imbalance_score DESC\nLIMIT 20",
+          "refId": "A"
         }
       ],
       "title": "Déséquilibres géographiques",
       "type": "table"
     },
+
     {
-      "datasource": "PostgreSQL",
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "no_bike_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "color-background" } },
+              { "id": "thresholds", "value": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 20 },
+                  { "color": "red", "value": 50 }
+                ]
+              }}
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
       "id": 5,
       "options": { "showHeader": true },
       "pluginVersion": "10.0.0",
       "targets": [
         {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRESQL}" },
           "format": "table",
-          "refId": "A",
-          "target": "SELECT station_id, station_name, network, latitude, longitude, COUNT(*) FILTER (WHERE bikes_available = 0) AS no_bike_count, COUNT(*) FILTER (WHERE free_slots = 0) AS no_slot_count, COUNT(*) AS total_observations FROM citybikes_station_events GROUP BY station_id, station_name, network, latitude, longitude HAVING COUNT(*) FILTER (WHERE bikes_available = 0) > 5 OR COUNT(*) FILTER (WHERE free_slots = 0) > 5 ORDER BY GREATEST(no_bike_count, no_slot_count) DESC LIMIT 20"
+          "rawSql": "SELECT\n  station_name,\n  network,\n  COUNT(*) FILTER (WHERE bikes_available = 0) AS no_bike_count,\n  COUNT(*) FILTER (WHERE free_slots = 0) AS no_slot_count,\n  COUNT(*) AS total_observations,\n  ROUND(COUNT(*) FILTER (WHERE bikes_available = 0)::numeric / COUNT(*) * 100, 1) AS no_bike_pct,\n  MAX(event_timestamp) AS last_seen\nFROM citybikes_station_events\nWHERE $__timeFilter(event_timestamp)\nGROUP BY station_id, station_name, network\nHAVING\n  COUNT(*) FILTER (WHERE bikes_available = 0) > 0\n  OR COUNT(*) FILTER (WHERE free_slots = 0) > 0\nORDER BY GREATEST(no_bike_count, no_slot_count) DESC\nLIMIT 20",
+          "refId": "A"
         }
       ],
       "title": "Stations critiques pour rééquilibrage",
       "type": "table"
     }
+
   ],
+  "refresh": "5m",
   "schemaVersion": 38,
-  "style": "light",
+  "style": "dark",
   "tags": ["UrbanHub", "CityBikes"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 2,
+        "includeAll": false,
+        "name": "DS_POSTGRESQL",
+        "options": [],
+        "query": "postgres",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
   "title": "UrbanHub CityBikes Analytics",
-  "uid": "urbanhub-citybikes-dashboard",
-  "version": 1
+  "uid": "urbanhub-citybikes-v2",
+  "version": 2
 }
