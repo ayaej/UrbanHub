@@ -58,6 +58,8 @@ services:
     image: eclipse-mosquitto:2.0
     ports:
       - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
 
   pgadmin:
     image: dpage/pgadmin4
@@ -125,6 +127,11 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
     depends_on:
       - postgres
 
@@ -151,3 +158,4 @@ services:
 volumes:
   pgdata:
   minio_data:
+  grafana_data:
