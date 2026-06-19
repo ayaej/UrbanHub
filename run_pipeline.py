@@ -35,7 +35,7 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
         use_minio: Sync fichiers vers MinIO
         use_postgres: Export vers PostgreSQL
     """
-    from src.config import GOLD_DIR
+    from src.config import BRONZE_DIR, SILVER_DIR, GOLD_DIR
     import pandas as pd
     
     start_time = time.time()
@@ -97,17 +97,81 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
         generate_visualizations()
         logger.info("[OK] Visualisations generees")
         
-        # Étape 6: MinIO Sync
+        # Étape 6: MinIO Sync (Bronze + Silver + Gold)
         if use_minio and storage:
             logger.info("\n[6/7] Sync vers MinIO (S3)...")
             try:
+                total_uploaded = 0
+                total_failed = 0
+                
+                # Bronze
+                logger.info("  - Syncing Bronze layer...")
+                bronze_count = 0
+                bronze_uploaded = 0
+                for file in BRONZE_DIR.glob("**/*"):
+                    if file.is_file():
+                        bronze_count += 1
+                        # Normalise le chemin: use forward slashes
+                        relative_path = str(file.relative_to(BRONZE_DIR)).replace('\\', '/')
+                        remote_path = f"bronze/{relative_path}"
+                        try:
+                            if storage.minio.upload_parquet(str(file), remote_path):
+                                bronze_uploaded += 1
+                                total_uploaded += 1
+                            else:
+                                total_failed += 1
+                        except Exception as e:
+                            logger.error(f"    Upload failed {file.name}: {e}")
+                            total_failed += 1
+                logger.info(f"    Bronze: {bronze_uploaded}/{bronze_count} uploaded")
+                
+                # Silver
+                logger.info("  - Syncing Silver layer...")
+                silver_count = 0
+                silver_uploaded = 0
+                for file in SILVER_DIR.glob("**/*"):
+                    if file.is_file():
+                        silver_count += 1
+                        # Normalise le chemin: use forward slashes
+                        relative_path = str(file.relative_to(SILVER_DIR)).replace('\\', '/')
+                        remote_path = f"silver/{relative_path}"
+                        try:
+                            if storage.minio.upload_parquet(str(file), remote_path):
+                                silver_uploaded += 1
+                                total_uploaded += 1
+                            else:
+                                total_failed += 1
+                        except Exception as e:
+                            logger.error(f"    Upload failed {file.name}: {e}")
+                            total_failed += 1
+                logger.info(f"    Silver: {silver_uploaded}/{silver_count} uploaded")
+                
+                # Gold
+                logger.info("  - Syncing Gold layer...")
+                gold_count = 0
+                gold_uploaded = 0
                 for file in GOLD_DIR.glob("**/*"):
                     if file.is_file():
-                        remote_path = f"gold/{file.relative_to(GOLD_DIR)}"
-                        storage.minio.upload_parquet(str(file), remote_path)
-                logger.info("[OK] MinIO sync termine")
+                        gold_count += 1
+                        # Normalise le chemin: use forward slashes
+                        relative_path = str(file.relative_to(GOLD_DIR)).replace('\\', '/')
+                        remote_path = f"gold/{relative_path}"
+                        try:
+                            if storage.minio.upload_parquet(str(file), remote_path):
+                                gold_uploaded += 1
+                                total_uploaded += 1
+                            else:
+                                total_failed += 1
+                        except Exception as e:
+                            logger.error(f"    Upload failed {file.name}: {e}")
+                            total_failed += 1
+                logger.info(f"    Gold: {gold_uploaded}/{gold_count} uploaded")
+                
+                logger.info(f"[OK] MinIO sync termine - Total: {total_uploaded}/{total_uploaded + total_failed} files")
+                if total_failed > 0:
+                    logger.warning(f"    Failed: {total_failed} files")
             except Exception as e:
-                logger.warning(f"MinIO sync failed: {e}")
+                logger.error(f"MinIO sync failed: {e}", exc_info=True)
         else:
             logger.info("\n[6/7] [SKIP] MinIO skippe")
         
@@ -156,7 +220,7 @@ def run_full_pipeline(skip_download=False, workers=4, use_minio=False, use_postg
         logger.info("=" * 80)
         logger.info(f"\n[TECHNOLOGIES USED]:")
         logger.info(f"   [OK] Python 3.8+ + Pandas + PyArrow (Parquet Snappy)")
-        logger.info(f"   {'[OK]' if use_minio else '[SKIP]'} MinIO (Bronze/Silver/Gold)")
+        logger.info(f"   {'[OK]' if use_minio else '[SKIP]'} MinIO S3 (Bronze + Silver + Gold)")
         logger.info(f"   [SKIP] n8n (cron) - Configure via docker-compose + workflows/")
         logger.info(f"   [OK] Docker (Dockerfile + docker-compose.yml)")
         logger.info(f"   {'[OK]' if use_postgres else '[SKIP]'} PostgreSQL (BI Analytics)")
@@ -187,7 +251,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--use-minio',
         action='store_true',
-        help='Sync fichiers Gold vers MinIO (S3)'
+        help='Sync fichiers Bronze/Silver/Gold vers MinIO (S3)'
     )
     parser.add_argument(
         '--use-postgres',
