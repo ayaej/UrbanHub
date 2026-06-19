@@ -1,0 +1,200 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --uh-bg: #0b1f3b;
+  --uh-surface: #1c2b3a;
+  --uh-surface-hover: #263b4f;
+  --uh-cyan: #00d4ff;
+  --uh-green: #00e676;
+  --uh-warning: #f5a623;
+  --uh-critical: #ff4d4f;
+  --uh-text: #ffffff;
+  --uh-text-secondary: #9ca3af;
+  --uh-text-muted: #6b7280;
+  --uh-border: rgba(255, 255, 255, 0.1);
+}
+
+@layer base {
+  :root {
+    --background: 215 56% 14%;
+    --foreground: 0 0% 100%;
+    --card: 210 33% 17%;
+    --card-foreground: 0 0% 100%;
+    --popover: 210 33% 17%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 191 100% 50%;
+    --primary-foreground: 215 56% 14%;
+    --secondary: 210 30% 24%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 210 30% 24%;
+    --muted-foreground: 220 9% 64%;
+    --accent: 210 30% 24%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 100% 65%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 210 20% 25%;
+    --input: 210 30% 24%;
+    --ring: 191 100% 50%;
+    --radius: 0.5rem;
+  }
+}
+
+* {
+  border-color: var(--uh-border);
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  background-color: var(--uh-bg);
+  color: var(--uh-text);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "tnum" 1;
+}
+
+h1, h2, h3, h4, h5, h6, .font-display {
+  font-family: "Outfit", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+code, .font-mono {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--uh-bg); }
+::-webkit-scrollbar-thumb { background: #2a3d54; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #3a527a; }
+
+/* Selection */
+::selection {
+  background: var(--uh-cyan);
+  color: var(--uh-bg);
+}
+
+/* Grid background utility */
+.uh-grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.uh-grid-bg-sm {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Glow */
+.uh-glow {
+  box-shadow:
+    0 0 0 1px rgba(0, 212, 255, 0.25),
+    0 8px 30px -8px rgba(0, 212, 255, 0.25);
+}
+
+.uh-card {
+  background: var(--uh-surface);
+  border: 1px solid var(--uh-border);
+  border-radius: 0.5rem;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.uh-card:hover {
+  border-color: rgba(0, 212, 255, 0.35);
+  box-shadow: 0 12px 36px -16px rgba(0, 212, 255, 0.35);
+}
+
+/* Pulsing dot */
+@keyframes uh-pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.25); }
+}
+.uh-pulse {
+  animation: uh-pulse-dot 1.8s ease-in-out infinite;
+}
+
+/* Flow lines */
+@keyframes uh-dash {
+  to { stroke-dashoffset: -24; }
+}
+.uh-flow-line {
+  stroke-dasharray: 6 6;
+  animation: uh-dash 1.2s linear infinite;
+}
+
+.uh-flow-line-slow {
+  stroke-dasharray: 4 8;
+  animation: uh-dash 3.5s linear infinite;
+}
+
+/* Fade-in stagger */
+@keyframes uh-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.uh-fade-in {
+  animation: uh-fade-up 0.45s ease-out both;
+}
+
+/* Hero animated grid + city silhouette */
+@keyframes uh-bg-shift {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 96px 96px, 96px 96px; }
+}
+.uh-hero-bg {
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: uh-bg-shift 18s linear infinite;
+}
+
+/* Leaflet dark fix */
+.leaflet-container {
+  background: #0b1f3b !important;
+  font-family: "IBM Plex Sans", sans-serif;
+}
+.leaflet-tile {
+  filter: brightness(0.95) contrast(1.05);
+}
+.leaflet-control-attribution {
+  background: rgba(11, 31, 59, 0.7) !important;
+  color: #9ca3af !important;
+  font-size: 10px !important;
+}
+.leaflet-control-attribution a {
+  color: #00d4ff !important;
+}
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: #1c2b3a !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Counter */
+.uh-counter {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .uh-flow-line, .uh-flow-line-slow, .uh-pulse, .uh-hero-bg, .uh-fade-in {
+    animation: none !important;
+  }
+}
