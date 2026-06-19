@@ -31,7 +31,7 @@ services:
     networks:
       - urbanhub_net
 
-  # n8n (ne gère plus le Bronze, sert éventuellement à d'autres workflows)
+  # n8n (ne gère plus le Bronze, mais lit le fichier Bronze)
   n8n:
     image: n8nio/n8n:latest
     container_name: n8n
@@ -60,6 +60,7 @@ services:
       - postgres_n8n
     volumes:
       - ./data/n8n:/home/node/.n8n
+      - ./data/bronze_iot:/files/bronze_iot
     networks:
       - urbanhub_net
 

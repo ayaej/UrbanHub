@@ -9,29 +9,31 @@
       "typeVersion": 1,
       "position": [260, 300],
       "parameters": {
-        "triggerTimes": [
-          {
-            "hour": 0,
-            "minute": 0
-          }
-        ],
         "mode": "everyX",
         "everyX": 5,
         "unit": "minutes"
       }
     },
     {
-      "id": "Postgres_Select_Bronze",
-      "name": "Select Bronze (1h)",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "id": "Read_Bronze_File",
+      "name": "Read Bronze File",
+      "type": "n8n-nodes-fs.readFile",
+      "typeVersion": 1,
       "position": [520, 300],
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT id, sensor_id, sensor_name, parameter, value, unit, datetime_utc, latitude, longitude\nFROM bronze_iot_raw\nWHERE datetime_utc >= NOW() - INTERVAL '1 hour';"
-      },
-      "credentials": {
-        "postgres": "UrbanHub IoT Postgres"
+        "filePath": "/files/bronze_iot/bronze_iot_openaq.log",
+        "encoding": "utf8",
+        "propertyName": "content"
+      }
+    },
+    {
+      "id": "Split_JSONL",
+      "name": "Split JSONL",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [760, 300],
+      "parameters": {
+        "functionCode": "const lines = (items[0].json.content || '').split('\\n');\nconst out = [];\n\nfor (const line of lines) {\n  const trimmed = line.trim();\n  if (!trimmed) continue;\n  try {\n    const obj = JSON.parse(trimmed);\n    out.push({ json: obj });\n  } catch (e) {\n    // ignore invalid JSON line\n  }\n}\n\nreturn out;"
       }
     },
     {
@@ -39,7 +41,7 @@
       "name": "Clean & Normalize",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [800, 300],
+      "position": [1040, 300],
       "parameters": {
         "functionCode": "const cleaned = [];\n\nfor (const item of items) {\n  const row = item.json;\n  const v = Number(row.value);\n\n  if (Number.isNaN(v)) {\n    continue;\n  }\n\n  if (v < 0 || v > 500) {\n    continue;\n  }\n\n  const dt = new Date(row.datetime_utc);\n  if (isNaN(dt.getTime())) {\n    continue;\n  }\n  const dtUtc = dt.toISOString();\n\n  const unit = 'µg/m³';\n\n  cleaned.push({\n    json: {\n      sensor_id: row.sensor_id,\n      sensor_name: row.sensor_name,\n      parameter: row.parameter || 'pm25',\n      value: v,\n      unit,\n      datetime_utc: dtUtc,\n      latitude: row.latitude,\n      longitude: row.longitude\n    }\n  });\n}\n\nreturn cleaned;"
       }
@@ -49,7 +51,7 @@
       "name": "Insert Silver",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1080, 300],
+      "position": [1320, 300],
       "parameters": {
         "operation": "insert",
         "table": "silver_iot_clean",
@@ -66,14 +68,25 @@
       "main": [
         [
           {
-            "node": "Select Bronze (1h)",
+            "node": "Read Bronze File",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Select Bronze (1h)": {
+    "Read Bronze File": {
+      "main": [
+        [
+          {
+            "node": "Split JSONL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split JSONL": {
       "main": [
         [
           {
