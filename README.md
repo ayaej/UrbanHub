@@ -30,11 +30,13 @@ UrbanHub simule un **jumeau numérique urbain** en agrégeant trois types de flu
 | **Streaming** | CityBikes API (vélos en libre-service) | Toutes les 60 s | Kafka, MQTT, PostgreSQL, MinIO |
 | **IoT** | OpenAQ API (qualité de l'air) | Toutes les 5 min | Python, n8n, PostgreSQL |
 
-Les données passent par trois couches successives :
+Les données passent par trois couches dans **MinIO (Data Lake)** puis **PostgreSQL** :
 
-- **Bronze** — données brutes telles que collectées (fichiers JSONL, CSV NOAA, payloads JSON)
-- **Silver** — données nettoyées, typées, dédupliquées, unités harmonisées
-- **Gold** — agrégats analytiques prêts pour la BI (indicateurs horaires, journaliers, corrélations)
+| Couche | Support | Contenu |
+|---|---|---|
+| **Bronze** | MinIO `urbanhub/bronze/` | Données brutes : CSV NOAA, payloads JSON CityBikes, JSONL OpenAQ |
+| **Silver** | MinIO `urbanhub/silver/` + PostgreSQL | Données nettoyées, typées, dédupliquées |
+| **Gold** | MinIO `urbanhub/gold/` + PostgreSQL | Agrégats analytiques horaires, journaliers, corrélations |
 
 Le tout est exposé via :
 - Un **backend FastAPI** (15 endpoints REST)
@@ -384,11 +386,47 @@ cd frontend && yarn install && yarn build && cd ..
 ### Importer les workflows n8n
 
 1. Ouvrir `http://localhost:5678` → admin / admin
-2. Importer `UrbanHub_CityBikes_Analytics_Workflow.json`
-3. Importer `iot_pollution/workflows_n8n/IoT_Clean_Silver.json`
-4. Importer `iot_pollution/workflows_n8n/IoT_Gold_Aggregates.json`
-5. Configurer la credential PostgreSQL : host `postgres`, db `urbanhub`, user `urbanhub`, password `urbanhub`
-6. Activer les trois workflows
+2. Créer une credential PostgreSQL nommée **`UrbanHub Postgres`** :
+   - Host : `postgres`, Port : `5432`, DB : `urbanhub`, User : `urbanhub`, Password : `urbanhub`
+3. Importer dans cet ordre :
+   - `iot_pollution/workflows_n8n/IoT_Clean_Silver.json` (Bronze → Silver, CRON 5 min)
+   - `iot_pollution/workflows_n8n/IoT_Gold_Aggregates.json` (Silver → Gold, CRON 1h)
+   - `UrbanHub_CityBikes_Analytics_Workflow.json` (webhook analytique CityBikes)
+   - `workflows/urbanhub_daily_pipeline.json` (météo NOAA, CRON 2h)
+   - **`workflows/urbanhub_master_orchestrator.json`** (orchestrateur principal)
+4. Activer tous les workflows
+
+#### Workflows disponibles
+
+| Fichier | Rôle | Déclencheur |
+|---|---|---|
+| `urbanhub_master_orchestrator.json` | **Orchestrateur principal** – lance tout le pipeline en séquence | Manuel + CRON 2h |
+| `urbanhub_daily_pipeline.json` | Pipeline météo NOAA seul (avec MinIO + PostgreSQL) | CRON 2h + Manuel |
+| `IoT_Clean_Silver.json` | Bronze IoT → Silver PostgreSQL | CRON 5 min |
+| `IoT_Gold_Aggregates.json` | Silver → Gold horaire + journalier | CRON 1h |
+| `UrbanHub_CityBikes_Analytics_Workflow.json` | Rapport analytique CityBikes à la demande | Webhook GET |
+
+#### Architecture du workflow maître
+
+```
+[Manuel] ──┐
+[CRON 2h] ─┴──► [1. Init MinIO buckets]
+                        │
+           ┌────────────┼────────────────────────┐
+           ▼            ▼                        ▼
+  [2. Météo NOAA]  [3. Bronze IoT→MinIO]  [4. IoT Silver]
+  run_pipeline.py  upload_bronze_to_minio      │
+  --use-minio           │               [4b→4e : Read/Parse/
+  --use-postgres         └──────────────  Upsert/Cursor]
+           │                                    │
+           └────────────────────────────────────┤
+                                                ▼
+                                     [5. IoT Gold horaire]
+                                                │
+                                     [5b. IoT Gold ville/jour]
+                                                │
+                                     [6. Log run PostgreSQL]
+```
 
 ---
 
@@ -408,12 +446,29 @@ cd frontend && yarn install && yarn build && cd ..
 
 ### Dashboards Grafana
 
-Importer manuellement depuis Grafana → Dashboards → Import :
+Les dashboards sont **chargés automatiquement** au démarrage de Grafana (provisioning).
 
-| Fichier | Contenu |
-|---|---|
-| `grafana/dashboard.json` | CityBikes – 10 panneaux (KPIs, timeline, stations critiques) |
-| `grafana/dashboards/iot_pollution_dashboard.json` | IoT Pollution – 7 panneaux (par polluant, par ville, alertes) |
+| Dashboard | Contenu | Panneaux |
+|---|---|---|
+| `grafana/dashboards/urbanhub-dashboard.json` | CityBikes – KPIs, timeline, stations critiques | 10 |
+| `grafana/dashboards/iot_pollution_dashboard.json` | IoT Pollution – par polluant, par ville, alertes | 7 |
+
+### Structure MinIO Data Lake
+
+```
+urbanhub/               ← bucket principal
+├── bronze/
+│   ├── weather/        ← CSV NOAA bruts (run_pipeline.py)
+│   ├── citybikes/      ← Payloads JSON CityBikes (citybikes_ingest.py)
+│   └── iot/
+│       └── YYYY-MM-DD/ ← JSONL OpenAQ (upload_bronze_to_minio.py)
+├── silver/
+│   └── weather/        ← Parquet Snappy (run_pipeline.py)
+└── gold/
+    └── weather/        ← Parquet agrégats (run_pipeline.py)
+
+citybikes-raw/          ← bucket dédié CityBikes (legacy)
+```
 
 ---
 

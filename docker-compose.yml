@@ -44,6 +44,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    container_name: minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -53,6 +54,27 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Initialise les buckets MinIO au démarrage
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin;
+        mc mb --ignore-existing local/urbanhub;
+        mc mb --ignore-existing local/citybikes-raw;
+        echo '✓ Buckets MinIO créés : urbanhub, citybikes-raw';
+      "
+    restart: "no"
 
   mqtt:
     image: eclipse-mosquitto:2.0
@@ -140,20 +162,43 @@ services:
   # ─────────────────────────────
 
   n8n:
-    image: n8nio/n8n:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.n8n
+    container_name: n8n
     ports:
       - "5678:5678"
     environment:
+      # Base de données n8n
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
       DB_POSTGRESDB_DATABASE: urbanhub
       DB_POSTGRESDB_USER: urbanhub
       DB_POSTGRESDB_PASSWORD: urbanhub
+      # Auth
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: admin
       N8N_BASIC_AUTH_PASSWORD: admin
+      # Autoriser Execute Command
+      N8N_ALLOW_EXEC: "true"
+      # Variables pipeline accessibles depuis n8n
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: urbanhub
+      POSTGRES_USER: urbanhub
+      POSTGRES_PASSWORD: urbanhub
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./data/n8n:/home/node/.n8n
+      - ./data/bronze_iot:/files/bronze_iot
+      # Monte tout le projet pour que n8n puisse exécuter run_pipeline.py
+      - .:/home/node/pipeline
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:

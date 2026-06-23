@@ -25,7 +25,7 @@
         "query": "-- Fenêtre fixe sur l'heure complète précédente (ex : si 14h05 → [13h00, 14h00[)\n-- Évite la dérive temporelle du bug NOW()-1h\nSELECT\n  sensor_id,\n  location_id,\n  sensor_name,\n  city,\n  latitude,\n  longitude,\n  pollutant,\n  value,\n  unit,\n  datetime_utc\nFROM silver_iot_clean\nWHERE datetime_utc >= DATE_TRUNC('hour', NOW()) - INTERVAL '1 hour'\n  AND datetime_utc <  DATE_TRUNC('hour', NOW());"
       },
       "credentials": {
-        "postgres": "UrbanHub IoT Postgres"
+        "postgres": "UrbanHub Postgres"
       }
     },
     {
@@ -49,7 +49,7 @@
         "query": "INSERT INTO gold_pollution_hourly\n  (sensor_id, pollutant, hour_utc, city, latitude, longitude,\n   avg_value, max_value, min_value, samples_count, computed_at)\nVALUES\n  ('{{$json[\"sensor_id\"]}}',\n   '{{$json[\"pollutant\"]}}',\n   '{{$json[\"hour_utc\"]}}',\n   {{$json[\"city\"] ? \"'\" + $json[\"city\"].replace(/'/g,\"''\") + \"'\" : 'NULL'}},\n   {{$json[\"latitude\"]  !== null ? $json[\"latitude\"]  : 'NULL'}},\n   {{$json[\"longitude\"] !== null ? $json[\"longitude\"] : 'NULL'}},\n   {{$json[\"avg_value\"]}},\n   {{$json[\"max_value\"]}},\n   {{$json[\"min_value\"]}},\n   {{$json[\"samples_count\"]}},\n   NOW())\nON CONFLICT (sensor_id, pollutant, hour_utc)\nDO UPDATE SET\n  avg_value     = EXCLUDED.avg_value,\n  max_value     = EXCLUDED.max_value,\n  min_value     = EXCLUDED.min_value,\n  samples_count = EXCLUDED.samples_count,\n  computed_at   = NOW();"
       },
       "credentials": {
-        "postgres": "UrbanHub IoT Postgres"
+        "postgres": "UrbanHub Postgres"
       }
     },
     {
@@ -63,7 +63,7 @@
         "query": "-- Agrégat journalier par ville et polluant (granularité jour)\nINSERT INTO gold_pollution_daily_city\n  (city, pollutant, day_utc, avg_value, max_value, min_value, samples_count, sensors_count, computed_at)\nSELECT\n  city,\n  pollutant,\n  DATE_TRUNC('day', hour_utc)::DATE AS day_utc,\n  ROUND(AVG(avg_value)::NUMERIC, 2) AS avg_value,\n  MAX(max_value)                    AS max_value,\n  MIN(min_value)                    AS min_value,\n  SUM(samples_count)                AS samples_count,\n  COUNT(DISTINCT sensor_id)         AS sensors_count,\n  NOW()                             AS computed_at\nFROM gold_pollution_hourly\nWHERE city IS NOT NULL\n  AND hour_utc >= DATE_TRUNC('day', NOW()) - INTERVAL '1 day'\n  AND hour_utc <  DATE_TRUNC('day', NOW())\nGROUP BY city, pollutant, DATE_TRUNC('day', hour_utc)::DATE\nON CONFLICT (city, pollutant, day_utc)\nDO UPDATE SET\n  avg_value     = EXCLUDED.avg_value,\n  max_value     = EXCLUDED.max_value,\n  min_value     = EXCLUDED.min_value,\n  samples_count = EXCLUDED.samples_count,\n  sensors_count = EXCLUDED.sensors_count,\n  computed_at   = NOW();"
       },
       "credentials": {
-        "postgres": "UrbanHub IoT Postgres"
+        "postgres": "UrbanHub Postgres"
       }
     }
   ],
